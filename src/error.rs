@@ -25,6 +25,27 @@ pub enum Error {
         milestone: &'static str,
     },
 
+    #[error("tether is not set up here; run `tether init`")]
+    NotConfigured,
+
+    #[error("{path}: {message}")]
+    BadConfig { path: String, message: String },
+
+    #[error(
+        "no `Upstream-Synced:` line in any commit reachable from {0}; record where \
+         this fork last synced with `tether init --sync-point <upstream-commit>`"
+    )]
+    NoSyncPoint(String),
+
+    #[error("the sync point {0} is not in this clone; fetch the upstream remote")]
+    SyncPointMissing(String),
+
+    #[error("sync points diverge: {best} does not contain {stray}")]
+    SyncPointsDiverge { best: String, stray: String },
+
+    #[error("{0}")]
+    Refused(String),
+
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -38,6 +59,12 @@ impl Error {
             Error::NotARepo(_) => "not_a_repo",
             Error::GitFailed { .. } => "git_failed",
             Error::NotImplemented { .. } => "not_implemented",
+            Error::NotConfigured => "not_configured",
+            Error::BadConfig { .. } => "bad_config",
+            Error::NoSyncPoint(_) => "no_sync_point",
+            Error::SyncPointMissing(_) => "sync_point_missing",
+            Error::SyncPointsDiverge { .. } => "sync_points_diverge",
+            Error::Refused(_) => "refused",
             Error::Io(_) => "io",
         }
     }

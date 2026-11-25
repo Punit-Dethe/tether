@@ -5,6 +5,12 @@
 
 pub mod cli;
 pub mod commands;
+pub mod config;
+pub mod decisions;
 pub mod error;
 pub mod git;
+pub mod inbox;
+pub mod paths;
 pub mod report;
+pub mod syncpoint;
+pub mod time;

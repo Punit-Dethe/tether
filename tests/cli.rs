@@ -72,13 +72,7 @@ fn status_outside_a_repository_is_a_coded_error() {
 #[test]
 fn unbuilt_commands_say_which_milestone_brings_them() {
     let fx = Fixture::downloaded_fork();
-    for args in [
-        vec!["init"],
-        vec!["inbox"],
-        vec!["sync"],
-        vec!["verify"],
-        vec!["packet", "abc123"],
-    ] {
+    for args in [vec!["sync"], vec!["verify"], vec!["packet", "abc123"]] {
         let run = tether(&fx.fork.path, &args);
         assert_envelope(&run.json, args[0]);
         assert_eq!(run.code, 1, "{}", run.stdout);

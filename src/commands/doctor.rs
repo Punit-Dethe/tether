@@ -1,39 +1,12 @@
-//! What each command does. Every command returns a [`Report`]; none prints.
+//! `tether doctor`: can tether work here, and if not, what to fix.
 
 use std::path::Path;
 
 use serde_json::json;
 
-use crate::cli::Command;
 use crate::error::{Error, Result};
 use crate::git::Git;
 use crate::report::Report;
-
-/// Where tether keeps its committed, reviewable state inside a repository.
-pub const STATE_DIR: &str = ".tether";
-pub const CONFIG_FILE: &str = "config.toml";
-
-pub fn run(command: &Command, dir: &Path) -> Report {
-    let name = command.name();
-    let result = match command {
-        Command::Doctor => doctor(dir),
-        Command::Status => status(dir),
-        Command::Init => not_built("init", "M1"),
-        Command::Inbox => not_built("inbox", "M1"),
-        Command::Sync => not_built("sync", "M1"),
-        Command::Closeout { .. } => not_built("closeout", "M1"),
-        Command::Check => not_built("check", "M1"),
-        Command::Packet { .. } => not_built("packet", "M2"),
-        Command::Decide { .. } => not_built("decide", "M2"),
-        Command::Verify => not_built("verify", "M3"),
-        Command::Map => not_built("map", "M4"),
-    };
-    result.unwrap_or_else(|error| Report::failure(name, &error))
-}
-
-fn not_built(command: &'static str, milestone: &'static str) -> Result<Report> {
-    Err(Error::NotImplemented { command, milestone })
-}
 
 /// One line of `tether doctor`.
 fn check(name: &str, ok: bool, detail: impl Into<String>) -> serde_json::Value {
@@ -42,7 +15,7 @@ fn check(name: &str, ok: bool, detail: impl Into<String>) -> serde_json::Value {
 
 /// Can tether work here? Checks git, the repository and an upstream remote,
 /// and says in plain words what to fix.
-fn doctor(dir: &Path) -> Result<Report> {
+pub fn run(dir: &Path) -> Result<Report> {
     let git = Git::new(dir);
     let mut checks = Vec::new();
     let mut fix: Option<(String, String)> = None;
@@ -105,29 +78,6 @@ fn doctor(dir: &Path) -> Result<Report> {
         report = report.with_next(command, why).needs_action();
     }
     Ok(report)
-}
-
-/// Where things stand, and the one thing to do next.
-fn status(dir: &Path) -> Result<Report> {
-    let root = Git::new(dir).toplevel()?;
-    let config = root.join(STATE_DIR).join(CONFIG_FILE);
-    if !config.is_file() {
-        return Ok(Report::success(
-            "status",
-            "tether is not set up in this repository yet.",
-            json!({ "configured": false, "root": root.display().to_string() }),
-        )
-        .with_next(
-            "tether init",
-            "detects the upstream, sync point and moved folders, then writes .tether/config.toml",
-        )
-        .needs_action());
-    }
-    Ok(Report::success(
-        "status",
-        "tether is set up; sync status arrives in milestone M1.",
-        json!({ "configured": true, "root": root.display().to_string() }),
-    ))
 }
 
 fn list(items: &[String]) -> String {

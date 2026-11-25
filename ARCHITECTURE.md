@@ -9,10 +9,18 @@ design and milestones are in [docs/PLAN.md](docs/PLAN.md).
 src/main.rs      thin binary: parse args, run, print, exit code
 src/lib.rs       the library the binary and tests share
 src/cli.rs       clap definitions only — no behaviour
-src/commands.rs  one function per command; each returns a Report, none prints
+src/commands/    one file per command; each returns a Report, none prints
 src/report.rs    the JSON envelope (the agent contract) and text rendering
 src/error.rs     every failure, each with a stable machine code
 src/git.rs       the ONLY place git runs
+src/config.rs    .tether/config.toml: upstream, moved folders, owned areas,
+                 review areas, relocations, budget scope
+src/syncpoint.rs Upstream-Synced: markers -> the sync point (refuses divergence)
+src/decisions.rs .tether/decisions/<sha>.toml: status, note, port and review
+                 records with evidence
+src/inbox.rs     derived list of tracked upstream commits and their state
+src/paths.rs     fnmatch-style patterns
+src/time.rs      the one date format tether reads
 tests/support/   throwaway two-repo fixtures with no shared history
 tests/cli.rs     end-to-end tests against the built binary
 ```
@@ -36,7 +44,6 @@ tests/cli.rs     end-to-end tests against the built binary
 
 ## Where things will go
 
-Planned modules (see PLAN.md §6) slot in beside `commands.rs`: `config`,
-`syncpoint`, `inbox`, `engine::{merge,carry}`, `owned`, `relocate`, `map`,
-`budget`, `verify`, `packet`, `decide`, `session`, and an optional
+Planned modules (see PLAN.md §6): `engine::{merge,carry}`, `owned`,
+`relocate`, `map`, `budget`, `verify`, `packet`, `session`, and an optional
 `semantic` merge driver behind a cargo feature.

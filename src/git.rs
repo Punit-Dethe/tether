@@ -110,6 +110,66 @@ impl Git {
             .filter(|name| !name.is_empty())
             .collect())
     }
+
+    /// Run git and return its raw stdout (untrimmed); a non-zero exit is an
+    /// error. For output whose exact bytes matter, such as commit messages.
+    pub fn raw(&self, args: &[&str]) -> Result<String> {
+        let output = self.run(args)?;
+        if !output.success() {
+            return Err(Error::GitFailed {
+                args: args.join(" "),
+                stderr: output.stderr.trim().to_owned(),
+            });
+        }
+        Ok(output.stdout)
+    }
+
+    /// The full sha of `rev` as a commit, or `None` if it names no commit.
+    pub fn commit_sha(&self, rev: &str) -> Result<Option<String>> {
+        let spec = format!("{rev}^{{commit}}");
+        let output = self.run(&[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            "--end-of-options",
+            &spec,
+        ])?;
+        let sha = output.stdout.trim();
+        Ok((output.success() && !sha.is_empty()).then(|| sha.to_owned()))
+    }
+
+    /// Is `older` an ancestor of (or equal to) `newer`?
+    pub fn is_ancestor(&self, older: &str, newer: &str) -> Result<bool> {
+        Ok(self
+            .run(&["merge-base", "--is-ancestor", older, newer])?
+            .success())
+    }
+
+    /// Does this clone hold `sha` as a commit object?
+    pub fn has_commit(&self, sha: &str) -> Result<bool> {
+        let spec = format!("{sha}^{{commit}}");
+        Ok(self.run(&["cat-file", "-e", &spec])?.success())
+    }
+
+    /// Every commit reachable from `rev`.
+    pub fn rev_list(&self, rev: &str) -> Result<Vec<String>> {
+        Ok(self
+            .raw(&["rev-list", rev])?
+            .split_whitespace()
+            .map(str::to_owned)
+            .collect())
+    }
+
+    /// Absolute path of a file inside the git directory (`SQUASH_MSG`, ...).
+    /// Correct in linked worktrees, where `.git` is a file.
+    pub fn git_path(&self, name: &str) -> Result<PathBuf> {
+        let path = PathBuf::from(self.ok(&["rev-parse", "--git-path", name])?);
+        Ok(if path.is_absolute() {
+            path
+        } else {
+            self.dir.join(path)
+        })
+    }
 }
 
 /// Parse `git version 2.52.0.windows.1` (or `2.39.3 (Apple Git-146)`).
