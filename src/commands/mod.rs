@@ -26,7 +26,7 @@ pub fn run(command: &Command, dir: &Path) -> Report {
         Command::Doctor => doctor::run(dir),
         Command::Status => status::run(dir),
         Command::Init { sync_point, remote } => init::run(dir, remote, sync_point.as_deref()),
-        Command::Inbox { all } => inbox::run(dir, *all),
+        Command::Inbox { all, security } => inbox::run(dir, *all, *security),
         Command::Sync {
             target,
             dry_run,

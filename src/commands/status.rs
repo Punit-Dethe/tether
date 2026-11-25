@@ -8,8 +8,10 @@
 //! 3. `checks`    — `tether check` fails: record ports/reviews, fix budgets.
 //! 4. `record`    — decisions are written but not committed.
 //! 5. `applied`   — a pending upstream commit was already applied by hand.
-//! 6. `behind`    — upstream moved: sync.
-//! 7. `clean`     — nothing to do (`next` is null).
+//! 6. `behind`    — upstream moved: sync (security fixes named first).
+//! 7. `security`  — tracking releases, and upstream fixed a security issue
+//!    that no release ships yet: a person decides.
+//! 8. `clean`     — nothing to do (`next` is null).
 
 use std::path::Path;
 
@@ -20,6 +22,7 @@ use super::check::{self, decide_next};
 use crate::engine;
 use crate::error::{Error, Result};
 use crate::git::Git;
+use crate::inbox::{Item, State};
 use crate::report::{Next, NextKind, Report};
 use crate::session;
 
@@ -105,7 +108,7 @@ pub fn run(dir: &Path) -> Result<Report> {
         Err(error) => return Err(error),
     };
     let inbox = &eval.inbox;
-    let pending = inbox.count(crate::inbox::State::Pending);
+    let pending = inbox.count(State::Pending);
     let applied: Vec<&str> = inbox
         .items
         .iter()
@@ -115,6 +118,15 @@ pub fn run(dir: &Path) -> Result<Report> {
     let uncommitted = !git
         .ok(&["status", "--porcelain", "--", ".tether"])?
         .is_empty();
+    let security = |state: State| -> Vec<&crate::inbox::Item> {
+        inbox
+            .items
+            .iter()
+            .filter(|i| i.state == state && !i.security.is_empty())
+            .collect()
+    };
+    let pending_security = security(State::Pending);
+    let unreleased_security = security(State::Unreleased);
 
     let (phase, summary, next) = if let Some(next) = eval.next {
         (
@@ -145,16 +157,38 @@ pub fn run(dir: &Path) -> Result<Report> {
             )),
         )
     } else if inbox.behind > 0 {
+        let mut summary = format!(
+            "{} upstream commit(s) past the sync point {} ({pending} pending).",
+            inbox.behind,
+            &inbox.sync_point.upstream[..8]
+        );
+        if !pending_security.is_empty() {
+            summary = format!(
+                "{} pending security fix(es): {}. {summary}",
+                pending_security.len(),
+                names(&pending_security)
+            );
+        }
         (
             "behind",
-            format!(
-                "{} upstream commit(s) past the sync point {} ({pending} pending).",
-                inbox.behind,
-                &inbox.sync_point.upstream[..8]
-            ),
+            summary,
             Some(Next::run(
                 "tether sync",
                 "brings the pending upstream commits in as one sync commit",
+            )),
+        )
+    } else if let Some(first) = unreleased_security.first() {
+        (
+            "security",
+            format!(
+                "Upstream fixed {} security issue(s) no release ships yet: {}.",
+                unreleased_security.len(),
+                names(&unreleased_security)
+            ),
+            Some(Next::of(
+                NextKind::AskHuman,
+                format!("tether sync --target {}", &first.sha[..12]),
+                "the fork tracks releases; syncing past the newest one to take an unreleased security fix is a person's call",
             )),
         )
     } else {
@@ -176,6 +210,12 @@ pub fn run(dir: &Path) -> Result<Report> {
         "behind": inbox.behind,
         "pending": pending,
         "applied_here": applied,
+        "release": inbox.release,
+        "unreleased": inbox.unreleased,
+        "security": {
+            "pending": pending_security.iter().map(|i| &i.sha).collect::<Vec<_>>(),
+            "unreleased": unreleased_security.iter().map(|i| &i.sha).collect::<Vec<_>>(),
+        },
         "check": eval.data,
     });
     let report = Report::success("status", summary, data);
@@ -183,4 +223,13 @@ pub fn run(dir: &Path) -> Result<Report> {
         Some(next) => report.then(next).needs_action(),
         None => report,
     })
+}
+
+/// `abc123def456 (GHSA-…)` for each item, its first signal in brackets.
+fn names(items: &[&Item]) -> String {
+    items
+        .iter()
+        .map(|i| format!("{} ({})", &i.sha[..12], i.security[0]))
+        .collect::<Vec<_>>()
+        .join(", ")
 }

@@ -15,6 +15,7 @@ use crate::ports;
 use crate::report::{Next, NextKind, Report};
 use crate::review;
 use crate::syncpoint;
+use crate::track;
 
 pub struct Args<'a> {
     pub update: bool,
@@ -50,7 +51,7 @@ struct Budgets {
 
 fn budgets(fork: &Fork, base: &str) -> Result<Budgets> {
     let (git, config) = (&fork.git, &fork.config);
-    let upstream_ref = config.upstream_ref();
+    let upstream_ref = track::target(git, config)?.commit;
     let costs = budget::measure(git, config, base)?;
     let strays = budget::strays(git, config, &upstream_ref)?;
     let adopted = budget::adopted(git, config, &upstream_ref)?;
@@ -131,7 +132,7 @@ pub(crate) fn evaluate(fork: &Fork, since: Option<&str>) -> Result<Evaluation> {
     let point = syncpoint::sync_point(git, "HEAD")?;
     let base = &point.upstream;
     let b = budgets(fork, base)?;
-    let drift = budget::drift(git, config, base, &config.upstream_ref())?;
+    let drift = budget::drift(git, config, base, &track::target(git, config)?.commit)?;
     let all = decisions::load(&fork.root)?;
     let inbox = inbox::build(git, &fork.root, config)?;
     let ports = ports::audit(git, config, &all, &inbox)?;

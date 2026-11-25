@@ -40,9 +40,12 @@ pub enum Command {
     Status,
     /// Tracked upstream commits with their state; pending ones by default.
     Inbox {
-        /// Include merged and ignored commits too.
+        /// Include merged, ignored and unreleased commits too.
         #[arg(long)]
         all: bool,
+        /// Only commits that look like security fixes.
+        #[arg(long)]
+        security: bool,
     },
     /// A self-contained work packet for one upstream item.
     Packet { item: String },

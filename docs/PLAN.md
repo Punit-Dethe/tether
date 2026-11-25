@@ -1,11 +1,14 @@
 # Fork tool — design plan
 
-Status: **M0 to M4 done** (2026-11-26); M1 verified by Grain's
+Status: **M0 to M5 done** (2026-11-26); M1 verified by Grain's
 `Upstream/tether_golden.py` (8/8 identical), M2 by `tests/agent.rs` (a
 scripted agent syncs a fixture by following `next` only), M3 by
 `tests/verify.rs` (upstream's broken test is told apart from a broken merge),
 M4 by `tests/map.rs` (an unmarked edit fails `check`; on Grain's real tree,
-42 files, 339 `[GRAIN]` markers, 297 unmarked changes grandfathered per file). Name: **`tether`** (user-facing name may
+42 files, 339 `[GRAIN]` markers, 297 unmarked changes grandfathered per file),
+M5 by `tests/releases.rs` (tagged releases with a GHSA reference; an
+unreleased CVE fix is a person's call). Upstream labels are not read: tether
+stays offline apart from `git fetch`. Name: **`tether`** (user-facing name may
 change later). License: **MIT**. Repository: `Punit-Dethe/tether` for now; it
 moves to an organisation account later. No MCP server is planned (§8).
 
@@ -258,7 +261,7 @@ Designed with user approval before building (same rule as Grain's UI).
 | M2 ✅ | Agent layer: `status`/`next`, packets, evidence gates, sessions, `AGENT.md` | An agent completes a fixture sync by following `next` only |
 | M3 ✅ | `verify` (baseline / upstream / result) | Fixture where upstream is broken is told apart from a broken merge |
 | M4 ✅ | Intent markers + generated map + unmarked-change check | Fixture: an unmarked edit fails `check` |
-| M5 | Release tracking + security category | Fixture with tagged releases and a GHSA reference |
+| M5 ✅ | Release tracking + security category | Fixture with tagged releases and a GHSA reference |
 | M6 | **Grain switches**: config written, CI moved, `Upstream/*.py` deleted, then the 72+ pending Handy commits synced with tether | Grain sync PR produced by tether |
 | M7 | Carry mode (patch-set forks) with Graftfork's safety rules | Public fixture forks re-applied onto new releases |
 | M8 | Built-in Weave merge driver (`semantic-merge` feature) | Fixture: a function-level conflict git cannot merge is merged; an unsure one is refused |

@@ -39,7 +39,6 @@ pub fn audit(
     if config.reviews.is_empty() {
         return Ok(audit);
     }
-    let upstream_ref = config.upstream_ref();
     for (sha, paths) in touched_in_range(git, base, head)? {
         let mut areas: Vec<&str> = paths
             .iter()
@@ -47,7 +46,7 @@ pub fn audit(
             .collect();
         areas.sort_unstable();
         areas.dedup();
-        if areas.is_empty() || !git.is_ancestor(&sha, &upstream_ref)? {
+        if areas.is_empty() || !crate::track::in_upstream(git, config, &sha)? {
             continue;
         }
         for area in areas {

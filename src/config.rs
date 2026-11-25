@@ -42,6 +42,10 @@ pub struct Config {
     #[serde(default)]
     pub map: MapConfig,
 
+    /// What marks an upstream commit as a security fix.
+    #[serde(default)]
+    pub security: Security,
+
     #[serde(default)]
     pub port_audit: PortAudit,
 
@@ -112,7 +116,7 @@ pub struct Agent {
     #[serde(default = "default_packet_bytes")]
     pub packet_bytes: usize,
     /// Actions an agent may not take alone (when `TETHER_ACTOR=agent`).
-    /// Patterns: `accept-growth`, `skip-verify`, `closeout`, `abort`, `merged`, `ignored`,
+    /// Patterns: `accept-growth`, `skip-verify`, `sync-unreleased`, `closeout`, `abort`, `merged`, `ignored`,
     /// `pending`, `note`, `clear`, `port:<outcome>`, `review:<area>`;
     /// `*` matches anything.
     #[serde(default = "default_needs_human")]
@@ -132,7 +136,11 @@ fn default_packet_bytes() -> usize {
     48_000
 }
 fn default_needs_human() -> Vec<String> {
-    vec!["accept-growth".into(), "skip-verify".into()]
+    vec![
+        "accept-growth".into(),
+        "skip-verify".into(),
+        "sync-unreleased".into(),
+    ]
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -152,6 +160,73 @@ pub struct Upstream {
     /// Without it the inbox lists only commits past the sync point.
     #[serde(default)]
     pub since: Option<String>,
+    /// Follow upstream's `branch` tip, or its newest `releases` tag.
+    #[serde(default, skip_serializing_if = "Track::is_branch")]
+    pub track: Track,
+    /// Which upstream tags are releases (fnmatch pattern).
+    #[serde(default = "default_tags", skip_serializing_if = "is_default_tags")]
+    pub tags: String,
+    /// Count tags with a pre-release suffix (`v2.0.0-rc.1`) as releases.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub prereleases: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Track {
+    #[default]
+    Branch,
+    Releases,
+}
+
+impl Track {
+    pub fn is_branch(&self) -> bool {
+        *self == Track::Branch
+    }
+}
+
+fn default_tags() -> String {
+    "v*".into()
+}
+fn is_default_tags(tags: &str) -> bool {
+    tags == "v*"
+}
+
+/// Words in a commit subject that flag a security fix.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Security {
+    #[serde(default = "default_security_keywords")]
+    pub keywords: Vec<String>,
+}
+
+impl Default for Security {
+    fn default() -> Self {
+        Security {
+            keywords: default_security_keywords(),
+        }
+    }
+}
+
+fn default_security_keywords() -> Vec<String> {
+    [
+        "security",
+        "vulnerability",
+        "vulnerable",
+        "exploit",
+        "xss",
+        "csrf",
+        "ssrf",
+        "rce",
+        "injection",
+        "path traversal",
+        "privilege escalation",
+        "sandbox escape",
+        "denial of service",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect()
 }
 
 fn default_remote() -> String {

@@ -8,7 +8,7 @@ tether is a small command-line tool built for AI coding agents first and
 people second. Every command can answer in JSON with the same shape, and
 always says what to do next.
 
-> **Status: early — milestones M1 to M4 done.** Working now: `doctor`,
+> **Status: early — milestones M1 to M5 done.** Working now: `doctor`,
 > `init`, `status`, `inbox`, `packet`, `decide`, `sync`, `verify`, `map`,
 > `closeout` and `check`. They give the same results as the Python tooling they replace on a
 > real product fork's history (Grain on Handy: 299 tracked commits, a

@@ -11,6 +11,7 @@ use crate::error::{Error, Result};
 use crate::report::{Next, NextKind, Report};
 use crate::session::{self, Session};
 use crate::syncpoint;
+use crate::track;
 
 pub struct Args<'a> {
     pub target: Option<&'a str>,
@@ -34,9 +35,7 @@ pub fn run(dir: &Path, args: Args) -> Result<Report> {
 
 /// Fetch the upstream remote so the target is what upstream has now.
 pub(crate) fn fetch(fork: &Fork) -> Result<()> {
-    let remote = &fork.config.upstream.remote;
-    fork.git.ok(&["fetch", "--quiet", remote])?;
-    Ok(())
+    track::fetch(&fork.git, &fork.config)
 }
 
 /// Resolve `rev` to an upstream commit on the tracked branch.
@@ -45,9 +44,11 @@ pub(crate) fn upstream_commit(fork: &Fork, rev: &str) -> Result<String> {
         .git
         .commit_sha(rev)?
         .ok_or_else(|| Error::Refused(format!("not a commit: {rev}")))?;
-    let branch = fork.config.upstream_ref();
-    if !fork.git.is_ancestor(&sha, &branch)? {
-        return Err(Error::Refused(format!("{rev} is not in {branch}")));
+    if !track::in_upstream(&fork.git, &fork.config, &sha)? {
+        return Err(Error::Refused(format!(
+            "{rev} is not upstream's: not on {} or in a tracked release",
+            fork.config.upstream_ref()
+        )));
     }
     Ok(sha)
 }
@@ -57,8 +58,18 @@ fn start(fork: &Fork, args: &Args) -> Result<Report> {
     if !args.no_fetch {
         fetch(fork)?;
     }
-    let branch = fork.config.upstream_ref();
-    let target = upstream_commit(fork, args.target.unwrap_or(&branch))?;
+    let target = match args.target {
+        Some(rev) => upstream_commit(fork, rev)?,
+        None => track::target(git, &fork.config)?.commit,
+    };
+    if fork.config.upstream.track == crate::config::Track::Releases
+        && !track::releases(git, &fork.config)?
+            .iter()
+            .any(|r| git.is_ancestor(&target, &r.commit).unwrap_or(false))
+    {
+        // Past every release: only with a person's say-so.
+        autonomy::require(&fork.config, "sync-unreleased")?;
+    }
     let base = syncpoint::sync_point(git, "HEAD")?.upstream;
     if !git.is_ancestor(&base, &target)? {
         return Err(Error::Refused(format!(

@@ -100,6 +100,9 @@ fn detect(git: &Git, remote: &str) -> Result<Config> {
             name,
             url,
             since: None,
+            track: Default::default(),
+            tags: "v*".into(),
+            prereleases: false,
         },
         moved: Vec::new(),
         owned: Vec::new(),
@@ -110,6 +113,7 @@ fn detect(git: &Git, remote: &str) -> Result<Config> {
         agent: Default::default(),
         verify: Default::default(),
         map: Default::default(),
+        security: Default::default(),
     })
 }
 
@@ -130,10 +134,10 @@ fn record_sync_point(git: &Git, config: &Config, rev: &str) -> Result<String> {
     let sha = git
         .commit_sha(rev)?
         .ok_or_else(|| Error::Refused(format!("not a commit: {rev}")))?;
-    let upstream = config.upstream_ref();
-    if !git.is_ancestor(&sha, &upstream)? {
+    if !crate::track::in_upstream(git, config, &sha)? {
         return Err(Error::Refused(format!(
-            "{rev} is not in {upstream}; fetch it or pick an upstream commit"
+            "{rev} is not in {} or a tracked release; fetch it or pick an upstream commit",
+            config.upstream_ref()
         )));
     }
     match syncpoint::sync_point(git, "HEAD") {

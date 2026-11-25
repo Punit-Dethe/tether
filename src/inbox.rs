@@ -3,7 +3,7 @@
 //! Derived, never stored. Each run recomputes it from upstream's history,
 //! the sync point and the recorded decisions, so it cannot drift.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::Path;
 
 use serde::Serialize;
@@ -23,6 +23,9 @@ pub enum State {
     Merged,
     /// Deliberately not taken.
     Ignored,
+    /// On upstream's branch past the newest release (`track = "releases"`):
+    /// tracked, not synced by default.
+    Unreleased,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -51,13 +54,25 @@ pub struct Item {
     /// `Upstream-Commit:` trailer: probably applied by hand.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub applied_here: bool,
+    /// The first upstream release that ships it (`track = "releases"`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub release: Option<String>,
+    /// Why it looks like a security fix: GHSA/CVE ids, then keywords.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub security: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Inbox {
     pub sync_point: SyncPoint,
-    /// The upstream branch tip the inbox was built against.
+    /// The upstream commit the inbox was built against: the branch tip, or
+    /// the newest release.
     pub target: String,
+    /// The newest release, when tracking releases.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub release: Option<String>,
+    /// Commits on the branch past that release.
+    pub unreleased: usize,
     /// Upstream commits past the sync point.
     pub behind: usize,
     pub items: Vec<Item>,
@@ -71,13 +86,13 @@ impl Inbox {
 
 /// Build the inbox for the fork at `root`.
 pub fn build(git: &Git, root: &Path, config: &Config) -> Result<Inbox> {
-    let target_ref = config.upstream_ref();
-    let target = git.commit_sha(&target_ref)?.ok_or_else(|| {
-        Error::Refused(format!(
-            "{target_ref} is not fetched; run `git fetch {}`",
-            config.upstream.remote
-        ))
-    })?;
+    let tracked = crate::track::target(git, config)?;
+    let target_ref = tracked.name.clone();
+    let target = tracked.commit.clone();
+    let releases = match tracked.release {
+        Some(_) => crate::track::releases(git, config)?,
+        None => Vec::new(),
+    };
     let point = syncpoint::sync_point(git, "HEAD")?;
     if !git.is_ancestor(&point.upstream, &target)? {
         return Err(Error::Refused(format!(
@@ -109,12 +124,38 @@ pub fn build(git: &Git, root: &Path, config: &Config) -> Result<Inbox> {
     let decisions = decisions::load(root)?;
     let applied = AppliedHere::scan(git, &point.upstream)?;
 
-    let log = git.raw(&[
-        "log",
-        &walk,
-        "--format=%x00%H%x00%ct%x00%cI%x00%s",
-        "--name-only",
-    ])?;
+    // Releases mode: the branch past the newest release is tracked too.
+    let unreleased_range = match &tracked.release {
+        Some(_) => {
+            let branch = config.upstream_ref();
+            git.commit_sha(&branch)?
+                .map(|_| format!("{target}..{branch}"))
+        }
+        None => None,
+    };
+    // Newest first, so equal timestamps keep upstream's order.
+    let mut ranges: Vec<String> = unreleased_range.iter().cloned().collect();
+    ranges.push(walk.clone());
+    let unreleased: HashSet<String> = match &unreleased_range {
+        Some(range) => git.rev_list(range)?.into_iter().collect(),
+        None => HashSet::new(),
+    };
+    let mut messages = HashMap::new();
+    for range in &ranges {
+        messages.extend(bodies(git, range)?);
+    }
+    let shipped_in = first_release(git, &releases, &walk)?;
+
+    let mut log = String::new();
+    for range in &ranges {
+        log.push_str(&git.raw(&[
+            "log",
+            range,
+            "--format=%x00%H%x00%ct%x00%cI%x00%s",
+            "--name-only",
+        ])?);
+        log.push('\n');
+    }
     let mut items = Vec::new();
     for (header, paths) in records(&log) {
         let fields: Vec<&str> = header.splitn(4, '\0').collect();
@@ -125,14 +166,24 @@ pub fn build(git: &Git, root: &Path, config: &Config) -> Result<Inbox> {
         if floor.is_some_and(|floor| timestamp < floor) {
             continue;
         }
-        items.push(item(
+        let mut entry = item(
             config, &decisions, &absorbed, &applied, sha, timestamp, date, subject, &paths,
-        ));
+        );
+        if unreleased.contains(sha) && entry.state == State::Pending {
+            entry.state = State::Unreleased;
+            entry.applied_here = false;
+        }
+        entry.release = shipped_in.get(sha).cloned();
+        let body = messages.get(sha).map_or("", String::as_str);
+        entry.security = security_signals(subject, body, &config.security.keywords);
+        items.push(entry);
     }
     items.sort_by_key(|item| std::cmp::Reverse(item.timestamp));
     Ok(Inbox {
         sync_point: point,
         target,
+        release: (!releases.is_empty()).then(|| target_ref.clone()),
+        unreleased: unreleased.len(),
         behind,
         items,
     })
@@ -177,7 +228,102 @@ fn item(
         ports: ports.into_iter().collect(),
         reviews: reviews.into_iter().collect(),
         applied_here: state == State::Pending && applied.matches(sha, subject),
+        release: None,
+        security: Vec::new(),
     }
+}
+
+/// Full commit messages in `range`, by sha.
+fn bodies(git: &Git, range: &str) -> Result<HashMap<String, String>> {
+    let log = git.raw(&["log", range, "--format=%H%x00%B%x01"])?;
+    Ok(log
+        .split('\x01')
+        .filter_map(|record| {
+            let (sha, body) = record.trim_start().split_once('\0')?;
+            Some((sha.to_owned(), body.to_owned()))
+        })
+        .collect())
+}
+
+/// The first release (oldest by version order) that contains each commit
+/// the inbox walks.
+fn first_release(
+    git: &Git,
+    releases: &[crate::track::Release],
+    walk: &str,
+) -> Result<HashMap<String, String>> {
+    let mut shipped = HashMap::new();
+    let floor = walk.split_once("..").map(|(floor, _)| format!("^{floor}"));
+    for release in releases.iter().rev() {
+        let mut args = vec!["rev-list", release.commit.as_str()];
+        if let Some(floor) = &floor {
+            args.push(floor);
+        }
+        for sha in git.raw(&args)?.lines() {
+            shipped
+                .entry(sha.to_owned())
+                .or_insert_with(|| release.name.clone());
+        }
+    }
+    Ok(shipped)
+}
+
+/// Why a commit looks like a security fix: advisory ids anywhere in its
+/// message (`GHSA-xxxx-xxxx-xxxx`, `CVE-2026-1234`), then whole-word
+/// `keywords` in its subject.
+pub fn security_signals(subject: &str, body: &str, keywords: &[String]) -> Vec<String> {
+    let mut found: Vec<String> = Vec::new();
+    let upper = format!("{subject}\n{body}").to_ascii_uppercase();
+    type Valid = fn(&str) -> bool;
+    let checks: [(&str, Valid); 2] = [("GHSA-", is_ghsa), ("CVE-", is_cve)];
+    for (prefix, valid) in checks {
+        for (at, _) in upper.match_indices(prefix) {
+            if at > 0 && upper.as_bytes()[at - 1].is_ascii_alphanumeric() {
+                continue;
+            }
+            let id: String = upper[at..]
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '-')
+                .collect();
+            let id = id.trim_end_matches('-').to_owned();
+            if valid(&id) && !found.contains(&id) {
+                found.push(id);
+            }
+        }
+    }
+    let lower = subject.to_ascii_lowercase();
+    for keyword in keywords {
+        let keyword = keyword.to_ascii_lowercase();
+        let whole_word = lower.match_indices(keyword.as_str()).any(|(at, _)| {
+            let before = lower[..at].chars().next_back();
+            let after = lower[at + keyword.len()..].chars().next();
+            !before.is_some_and(char::is_alphanumeric) && !after.is_some_and(char::is_alphanumeric)
+        });
+        if whole_word {
+            found.push(format!("keyword: {keyword}"));
+        }
+    }
+    found
+}
+
+/// `GHSA-` and three groups of four letters or digits.
+fn is_ghsa(id: &str) -> bool {
+    let groups: Vec<&str> = id.split('-').collect();
+    groups.len() == 4
+        && groups[1..]
+            .iter()
+            .all(|g| g.len() == 4 && g.chars().all(|c| c.is_ascii_alphanumeric()))
+}
+
+/// `CVE-YYYY-NNNN` (four or more digits at the end).
+fn is_cve(id: &str) -> bool {
+    let groups: Vec<&str> = id.split('-').collect();
+    groups.len() == 3
+        && groups[1].len() == 4
+        && groups[2].len() >= 4
+        && groups[1..]
+            .iter()
+            .all(|g| g.chars().all(|c| c.is_ascii_digit()))
 }
 
 /// Split `git log --format=%x00… --name-only` output into (header, paths).
@@ -330,6 +476,24 @@ pub fn resolve<'a>(items: &'a [Item], reference: &str) -> Result<&'a Item> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn security_signals_skip_lookalikes() {
+        let words = crate::config::Security::default().keywords;
+        let none = |subject: &str, body: &str| security_signals(subject, body, &words).is_empty();
+        assert!(none("Make the insecure warning clearer", ""));
+        assert!(none("Rename securityContext helper", ""));
+        assert!(none("Bump to CVE-12 style ids", "see XCVE-2026-12345"));
+        assert!(none("Tidy the ghsa-abc docs", "GHSA-abc-def"));
+        assert_eq!(
+            security_signals("Harden auth (#1)", "Fixes cve-2026-1234 and CVE-2026-1234.", &words),
+            vec!["CVE-2026-1234"]
+        );
+        assert_eq!(
+            security_signals("Prevent path traversal in export", "", &words),
+            vec!["keyword: path traversal"]
+        );
+    }
 
     #[test]
     fn finds_the_landing_pull_request() {
