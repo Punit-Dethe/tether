@@ -528,7 +528,26 @@ impl Config {
                 path.starts_with(&area.path) && !area.except.iter().any(|e| path.starts_with(e))
             })
         };
-        owned(path) || owned(&self.to_fork_path(path))
+        let state = self
+            .state_dirs()
+            .iter()
+            .any(|dir| path.starts_with(dir.as_str()));
+        state || owned(path) || owned(&self.to_fork_path(path))
+    }
+
+    /// Directories holding tether's own state (`.tether/`, the shared rerere
+    /// cache), each ending in `/`. They are never upstream's: a rerere
+    /// preimage looks enough like the file it came from for rename detection
+    /// to merge upstream's edits into it.
+    pub fn state_dirs(&self) -> Vec<String> {
+        let mut dirs = vec![".tether/".to_owned()];
+        if let Some(cache) = &self.sync.rerere_cache {
+            let cache = format!("{}/", cache.trim_end_matches('/'));
+            if !cache.starts_with(".tether/") {
+                dirs.push(cache);
+            }
+        }
+        dirs
     }
 
     /// Review areas an upstream change to `path` falls in.

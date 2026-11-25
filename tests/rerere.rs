@@ -117,3 +117,42 @@ fn a_relocation_to_a_missing_fork_file_fails_check() {
     );
     assert_eq!(check.json["next"]["kind"], "edit");
 }
+
+/// A rerere preimage is a near copy of the file it came from, so when the
+/// fork moved that file away, rename detection routes upstream's edits into
+/// the cache. tether's state must keep the fork's bytes.
+#[test]
+fn upstream_edits_never_reach_the_shared_cache() {
+    let fx = Fixture::downloaded_fork();
+    let root = fx.upstream.path.parent().unwrap().to_path_buf();
+    let upstream = Repo::init(root.join("up-cache"));
+    let body: String = (0..40).map(|i| format!("line {i}\n")).collect();
+    upstream.write("big.rs", &body);
+    let base = upstream.commit("upstream: initial");
+
+    let fork = Repo::init(root.join("fork-cache"));
+    // The fork dropped big.rs; its cache holds a preimage of it.
+    let preimage = body.replacen("line 3\n", "<<<<<<<\nline 3\n=======\nmine\n>>>>>>>\n", 1);
+    fork.write(".tether/rr-cache/abc/preimage", &preimage);
+    fork.write("other.rs", "fn other() {}\n");
+    fork.commit(&format!("Initial commit\n\nUpstream-Synced: {base}"));
+    let url = upstream.path.to_string_lossy().replace('\\', "/");
+    fork.git(&["remote", "add", "upstream", &url]);
+    fork.write(
+        ".tether/config.toml",
+        "[upstream]\nname = \"Up\"\n\n[sync]\nrerere_cache = \".tether/rr-cache\"\n",
+    );
+    fork.commit("add tether config");
+
+    upstream.write("big.rs", &body.replace("line 30\n", "line 30 fixed\n"));
+    upstream.commit("Fix line 30 (#3)");
+
+    let sync = tether(&fork.path, &["sync"]);
+    assert!(sync.code == 0 || sync.code == 2, "{}", sync.stdout);
+    assert_eq!(
+        fs::read_to_string(fork.path.join(".tether/rr-cache/abc/preimage")).unwrap(),
+        preimage,
+        "{}",
+        sync.stdout
+    );
+}

@@ -150,6 +150,14 @@ pub fn apply_owned(git: &Git, config: &Config, target: &str) -> Result<OwnedReso
             outcome.resolved.push(path);
         }
     }
+    // tether's own state never takes upstream's edits, even clean ones that
+    // rename detection routed into it.
+    for dir in config.state_dirs() {
+        for path in lines(&git.raw(&["diff", "--name-only", "HEAD", "--", &dir])?) {
+            keep_ours(git, &path)?;
+            outcome.reverted.push(path);
+        }
+    }
     // A change counts as adopted when the merge touched the path AND upstream
     // has the matching file: that pairing is exactly what rename detection
     // used to place it.

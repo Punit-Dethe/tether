@@ -200,14 +200,22 @@ pub(crate) fn resolve_next(conflicts: &[String]) -> Next {
 /// computed in memory without touching the working tree.
 fn preview(fork: &Fork, base: &str, target: &str) -> Result<(Vec<String>, Vec<String>)> {
     let merge_base = format!("--merge-base={base}");
-    let out = fork.git.run(&[
+    // The real merge's settings ([sync] git_config: merge drivers, rename
+    // handling), or the preview reports conflicts the sync would not raise.
+    let settings = fork.config.sync.merge_settings();
+    let mut args: Vec<&str> = Vec::new();
+    for setting in &settings {
+        args.extend(["-c", setting.as_str()]);
+    }
+    args.extend([
         "merge-tree",
         "--write-tree",
         "--name-only",
         &merge_base,
         "HEAD",
         target,
-    ])?;
+    ]);
+    let out = fork.git.run(&args)?;
     if out.status > 1 {
         return Err(Error::GitFailed {
             args: "merge-tree".into(),
