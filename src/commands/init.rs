@@ -114,6 +114,7 @@ fn detect(git: &Git, remote: &str) -> Result<Config> {
         verify: Default::default(),
         map: Default::default(),
         security: Default::default(),
+        sync: Default::default(),
     })
 }
 

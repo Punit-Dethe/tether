@@ -120,7 +120,13 @@ fn start(fork: &Fork, args: &Args) -> Result<Report> {
         ));
     }
 
-    let merged = engine::squash_merge(git, &base, &target)?;
+    let restored = match &fork.config.sync.rerere_cache {
+        Some(shared) => {
+            engine::copy_resolutions(&fork.root.join(shared), &git.git_path("rr-cache")?)?
+        }
+        None => 0,
+    };
+    let merged = engine::squash_merge(git, &fork.config.sync.merge_settings(), &base, &target)?;
     let conflicts = engine::conflicted(git)?;
     if merged.status > 1 || (merged.status == 1 && conflicts.is_empty()) {
         return Err(Error::GitFailed {
@@ -153,6 +159,7 @@ fn start(fork: &Fork, args: &Args) -> Result<Report> {
         "conflicts": remaining,
         "owned_resolved": owned.resolved,
         "owned_reverted": owned.reverted,
+        "rerere_restored": restored,
     });
     if remaining.is_empty() {
         let next = super::verify::gate(fork)?
@@ -266,14 +273,27 @@ fn finish(fork: &Fork, skip_verify: bool) -> Result<Report> {
         .then(next)
         .needs_action());
     }
-    let commit = engine::commit_sync(git)?;
+    let commit = engine::commit_sync(git, &fork.config.sync.merge_settings())?;
     session::clear(git)?;
-    Ok(Report::success(
+    // Share what was resolved, so no clone resolves it again.
+    let saved = match &fork.config.sync.rerere_cache {
+        Some(shared) => {
+            engine::copy_resolutions(&git.git_path("rr-cache")?, &fork.root.join(shared))?
+        }
+        None => 0,
+    };
+    let report = Report::success(
         "sync",
         format!("Recorded the sync to {}.", &target[..8]),
-        json!({ "commit": commit, "target": target }),
-    )
-    .with_next("tether check", "confirm budgets and reviews before pushing"))
+        json!({ "commit": commit, "target": target, "rerere_saved": saved }),
+    );
+    Ok(match (&fork.config.sync.rerere_cache, saved) {
+        (Some(shared), 1..) => report.with_next(
+            format!("git add {shared} && git commit -m \"Share new conflict resolutions\""),
+            "commit the new rerere resolutions so other clones and CI reuse them",
+        ),
+        _ => report.with_next("tether check", "confirm budgets and reviews before pushing"),
+    })
 }
 
 fn abort(fork: &Fork) -> Result<Report> {

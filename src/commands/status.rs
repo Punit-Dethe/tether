@@ -115,9 +115,17 @@ pub fn run(dir: &Path) -> Result<Report> {
         .filter(|item| item.applied_here)
         .map(|item| item.sha.as_str())
         .collect();
-    let uncommitted = !git
-        .ok(&["status", "--porcelain", "--", ".tether"])?
-        .is_empty();
+    let mut tracked_state = vec![".tether"];
+    if let Some(shared) = &fork.config.sync.rerere_cache {
+        tracked_state.push(shared);
+    }
+    let mut porcelain = vec!["status", "--porcelain", "--"];
+    porcelain.extend(tracked_state.iter().copied());
+    let uncommitted = !git.ok(&porcelain)?.is_empty();
+    let record_command = format!(
+        "git add {} && git commit -m \"Record upstream decisions\"",
+        tracked_state.join(" ")
+    );
     let security = |state: State| -> Vec<&crate::inbox::Item> {
         inbox
             .items
@@ -139,7 +147,7 @@ pub fn run(dir: &Path) -> Result<Report> {
             "record",
             "Changes under .tether/ (config, decisions, budgets) are not committed.".to_owned(),
             Some(Next::run(
-                "git add .tether && git commit -m \"Record upstream decisions\"",
+                record_command,
                 "commit the decisions so the next sync and CI see them",
             )),
         )

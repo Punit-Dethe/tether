@@ -36,6 +36,7 @@ tests/agent.rs   a scripted agent syncs a fixture by following `next` only
 tests/verify.rs  upstream's broken test is told apart from a broken merge
 tests/map.rs     an unmarked edit to upstream-derived code fails `check`
 tests/releases.rs  tagged releases, unreleased commits, GHSA/CVE security fixes
+tests/rerere.rs  shared rerere resolutions and per-sync git settings ([sync])
 ```
 
 ## Rules

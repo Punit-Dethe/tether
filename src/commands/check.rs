@@ -158,17 +158,29 @@ pub(crate) fn evaluate(fork: &Fork, since: Option<&str>) -> Result<Evaluation> {
         _ => review::Audit::default(),
     };
 
+    // A relocation that points at a fork file that is gone can never be
+    // ported to: the port audit would accept records for nothing.
+    let mut relocations = Vec::new();
+    for (upstream, relocation) in &config.relocations {
+        for destination in &relocation.fork {
+            if !fork.root.join(destination).exists() {
+                relocations.push(format!("{upstream} -> {destination}"));
+            }
+        }
+    }
     let failures = b.growth.len()
         + b.strays.len()
         + b.new_adopted.len()
         + drift.len()
         + ports.unverified.len()
         + reviews.missing.len()
-        + b.unmarked_growth.len();
+        + b.unmarked_growth.len()
+        + relocations.len();
     let data = json!({
         "sync_point": point,
         "budgets": { "files": b.costs.len(), "failures": b.growth, "improvements": b.improvements },
         "strays": b.strays,
+        "relocations": { "missing": relocations },
         "unmarked": {
             "failures": b.unmarked_growth,
             "at": b.unmarked_at.iter().map(|(p, l)| json!({ "path": p, "line": l })).collect::<Vec<_>>(),
@@ -271,6 +283,18 @@ fn first_fix(fork: &Fork, data: &Value, behind: usize) -> Next {
             NextKind::Edit,
             format!("git mv {path} {}", config.to_fork_path(path)),
             "a new upstream file landed outside the folder the fork moved it to; move it (and update any module declaration), then commit",
+        );
+    }
+    if let Some(missing) = data["relocations"]["missing"]
+        .get(0)
+        .and_then(Value::as_str)
+    {
+        return Next::of(
+            NextKind::Edit,
+            "tether check",
+            format!(
+                "relocation {missing}: the fork file is gone; point [relocations] in .tether/config.toml at where that code lives now"
+            ),
         );
     }
     if let Some(entry) = data["ports"]["unverified"].get(0) {

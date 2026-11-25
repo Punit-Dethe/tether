@@ -46,6 +46,10 @@ pub struct Config {
     #[serde(default)]
     pub security: Security,
 
+    /// How `tether sync` runs the merge.
+    #[serde(default, skip_serializing_if = "SyncConfig::is_empty")]
+    pub sync: SyncConfig,
+
     #[serde(default)]
     pub port_audit: PortAudit,
 
@@ -190,6 +194,43 @@ fn default_tags() -> String {
 }
 fn is_default_tags(tags: &str) -> bool {
     tags == "v*"
+}
+
+/// How `tether sync` runs the merge.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SyncConfig {
+    /// git settings for the merge only (`-c key=value`), so every clone and
+    /// CI runner merges the same way: e.g. `merge.directoryRenames = "true"`,
+    /// or `merge.ours.driver = "true"` for `merge=ours` attributes.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub git_config: BTreeMap<String, String>,
+    /// A folder in the repository that shares rerere's recorded conflict
+    /// resolutions between clones: restored before each sync, new ones saved
+    /// after it (commit them).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rerere_cache: Option<String>,
+}
+
+impl SyncConfig {
+    pub fn is_empty(&self) -> bool {
+        self.git_config.is_empty() && self.rerere_cache.is_none()
+    }
+
+    /// The `-c key=value` pairs a sync's merge runs with.
+    pub fn merge_settings(&self) -> Vec<String> {
+        let mut settings: Vec<String> = self
+            .git_config
+            .iter()
+            .map(|(key, value)| format!("{key}={value}"))
+            .collect();
+        if self.rerere_cache.is_some() && !self.git_config.contains_key("rerere.enabled") {
+            settings.push("rerere.enabled=true".into());
+        }
+        // Reused rerere content is review input, never an auto-staged decision.
+        settings.push("rerere.autoupdate=false".into());
+        settings
+    }
 }
 
 /// Words in a commit subject that flag a security fix.

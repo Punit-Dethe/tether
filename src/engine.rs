@@ -78,7 +78,12 @@ pub fn sync_message(git: &Git, config: &Config, base: &str, target: &str) -> Res
 
 /// `git merge --squash target`, three-way against `base`. Returns git's exit
 /// status: 0 clean, 1 conflicts, anything else a failure.
-pub fn squash_merge(git: &Git, base: &str, target: &str) -> Result<crate::git::Output> {
+pub fn squash_merge(
+    git: &Git,
+    settings: &[String],
+    base: &str,
+    target: &str,
+) -> Result<crate::git::Output> {
     let head = git.ok(&["rev-parse", "HEAD"])?;
     let grafted = !git.is_ancestor(base, &head)?;
     if grafted {
@@ -94,8 +99,12 @@ pub fn squash_merge(git: &Git, base: &str, target: &str) -> Result<crate::git::O
             });
         }
     }
-    // Reused rerere content is review input, never an auto-staged decision.
-    let merged = git.run(&["-c", "rerere.autoupdate=false", "merge", "--squash", target]);
+    let mut args: Vec<&str> = Vec::new();
+    for setting in settings {
+        args.extend(["-c", setting.as_str()]);
+    }
+    args.extend(["merge", "--squash", target]);
+    let merged = git.run(&args);
     if grafted {
         let _ = git.run(&["replace", "-d", &head]);
     }
@@ -172,12 +181,18 @@ pub fn remove_squash_msg(git: &Git) -> Result<()> {
 }
 
 /// Commit the prepared sync as one single-parent commit.
-pub fn commit_sync(git: &Git) -> Result<String> {
+pub fn commit_sync(git: &Git, settings: &[String]) -> Result<String> {
     let message: PathBuf = squash_msg_path(git)?;
     let message = message.to_string_lossy().into_owned();
     // --allow-empty: a sync whose every change was declined still moves the
     // sync point; that review happened.
-    git.ok(&["commit", "--allow-empty", "-q", "-F", &message])?;
+    // The merge's settings again: rerere records resolutions at commit time.
+    let mut args: Vec<&str> = Vec::new();
+    for setting in settings {
+        args.extend(["-c", setting.as_str()]);
+    }
+    args.extend(["commit", "--allow-empty", "-q", "-F", &message]);
+    git.ok(&args)?;
     remove_squash_msg(git)?;
     git.ok(&["rev-parse", "HEAD"])
 }
@@ -215,4 +230,31 @@ pub fn repo_relative(root: &Path, path: &Path) -> String {
         .unwrap_or(path)
         .to_string_lossy()
         .replace('\\', "/")
+}
+
+/// Copy complete rerere resolutions (entries with a `postimage`) from `from`
+/// to `to`, skipping ones already there. Entries are named by the conflict's
+/// hash, so nothing is ever overwritten. Returns how many were copied.
+pub fn copy_resolutions(from: &std::path::Path, to: &std::path::Path) -> Result<usize> {
+    let Ok(entries) = std::fs::read_dir(from) else {
+        return Ok(0);
+    };
+    let mut copied = 0;
+    for entry in entries {
+        let entry = entry?;
+        let source = entry.path();
+        let target = to.join(entry.file_name());
+        if !source.join("postimage").is_file() || target.exists() {
+            continue;
+        }
+        std::fs::create_dir_all(&target)?;
+        for file in std::fs::read_dir(&source)? {
+            let file = file?;
+            if file.file_type()?.is_file() {
+                std::fs::copy(file.path(), target.join(file.file_name()))?;
+            }
+        }
+        copied += 1;
+    }
+    Ok(copied)
 }
