@@ -156,3 +156,55 @@ fn upstream_edits_never_reach_the_shared_cache() {
         sync.stdout
     );
 }
+
+/// A file the fork moved, which upstream then changed: git raises a
+/// delete/modify conflict with no markers, and the packet must say where the
+/// fork keeps the file instead of asking for marker edits.
+#[test]
+fn a_delete_modify_packet_points_at_the_fork_home() {
+    let fx = Fixture::downloaded_fork();
+    let root = fx.upstream.path.parent().unwrap().to_path_buf();
+    let upstream = Repo::init(root.join("up-moved"));
+    upstream.write("src/tray.rs", "fn tray() {}\n");
+    let base = upstream.commit("upstream: initial");
+
+    let fork = Repo::init(root.join("fork-moved"));
+    // Rewritten past rename detection, at the moved home.
+    fork.write(
+        "src/handy/tray.rs",
+        "fn tray() { grain(); }\nfn grain() {}\n// more\n// lines\n",
+    );
+    fork.commit(&format!("Initial commit\n\nUpstream-Synced: {base}"));
+    let url = upstream.path.to_string_lossy().replace("\\", "/");
+    fork.git(&["remote", "add", "upstream", &url]);
+    fork.write(
+        ".tether/config.toml",
+        "[upstream]\nname = \"Up\"\n\n[[moved]]\nfork = \"src/handy/\"\nupstream = \"src/\"\n",
+    );
+    fork.commit("add tether config");
+    upstream.write("src/tray.rs", "fn tray() { fixed(); }\n");
+    upstream.commit("Fix the tray (#4)");
+
+    let sync = tether(&fork.path, &["sync"]);
+    assert_eq!(
+        sync.json["data"]["conflicts"],
+        serde_json::json!(["src/tray.rs"]),
+        "{}",
+        sync.stdout
+    );
+    let packet = tether(&fork.path, &["packet", "src/tray.rs"]);
+    assert_eq!(
+        packet.json["data"]["conflict"], "deleted-in-fork",
+        "{}",
+        packet.stdout
+    );
+    assert_eq!(packet.json["data"]["fork_home"], "src/handy/tray.rs");
+    assert!(
+        packet.json["data"]["steps"][1]
+            .as_str()
+            .unwrap()
+            .contains("git rm src/tray.rs"),
+        "{}",
+        packet.stdout
+    );
+}

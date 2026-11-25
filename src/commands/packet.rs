@@ -281,14 +281,55 @@ fn conflict(fork: &Fork, path: &str, base: &str, target: &str) -> Result<Report>
     let conflicts = engine::conflicted(git)?;
     let still_conflicted = conflicts.iter().any(|p| p == path);
 
-    let steps = [
-        format!("Read `upstream_diff` (what upstream changed) and `fork_diff` (why the fork differs) for {path}."),
-        "Edit the file so it keeps the fork's behaviour and upstream's fix; remove every conflict marker.".to_owned(),
-        format!("git add {path}"),
-        "If more files are listed by `tether status`, take the next; otherwise run `tether sync --continue`.".to_owned(),
-    ];
+    // Which sides still have the file: a delete/modify conflict has no
+    // markers to edit, and needs a different decision.
+    let stages = git.raw(&["ls-files", "--unmerged", "--", path])?;
+    let has = |stage: &str| {
+        stages
+            .lines()
+            .any(|l| l.split_whitespace().nth(2) == Some(stage))
+    };
+    let shape = match (has("2"), has("3")) {
+        (false, true) => "deleted-in-fork",
+        (true, false) => "deleted-upstream",
+        _ => "both-changed",
+    };
+    let fork_home = config.to_fork_path(&upstream_path);
+    let moved_home = (fork_home != path
+        && git
+            .run(&["cat-file", "-e", &format!("HEAD:{fork_home}")])?
+            .success())
+    .then_some(fork_home);
+    let last = "If more files are listed by `tether status`, take the next; otherwise run `tether sync --continue`.".to_owned();
+    let steps = match shape {
+        "deleted-in-fork" => vec![
+            format!("The fork deleted {path}; upstream changed it. Read `upstream_diff`."),
+            match &moved_home {
+                Some(home) => format!(
+                    "The fork keeps this file at {home}: apply upstream's change there, then `git rm {path}`."
+                ),
+                None => format!(
+                    "If the fork moved this code elsewhere, apply upstream's change there and `git rm {path}`; if the fork wants upstream's file back, `git add {path}`."
+                ),
+            },
+            last,
+        ],
+        "deleted-upstream" => vec![
+            format!("Upstream deleted {path}; the fork changed it. Read `fork_diff` and the upstream commits."),
+            format!("If the fork still needs it, `git add {path}`; otherwise `git rm {path}` and move what the fork relies on."),
+            last,
+        ],
+        _ => vec![
+            format!("Read `upstream_diff` (what upstream changed) and `fork_diff` (why the fork differs) for {path}."),
+            "Edit the file so it keeps the fork's behaviour and upstream's fix; remove every conflict marker.".to_owned(),
+            format!("git add {path}"),
+            last,
+        ],
+    };
     let data = json!({
         "kind": "conflict",
+        "conflict": if still_conflicted { Some(shape) } else { None },
+        "fork_home": moved_home,
         "path": path,
         "upstream_path": upstream_path,
         "base": base,
