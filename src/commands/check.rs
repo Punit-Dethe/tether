@@ -10,6 +10,7 @@ use crate::budget::{self, Baseline};
 use crate::decisions;
 use crate::error::{Error, Result};
 use crate::inbox::{self, Inbox};
+use crate::map;
 use crate::ports;
 use crate::report::{Next, NextKind, Report};
 use crate::review;
@@ -39,6 +40,12 @@ struct Budgets {
     new_adopted: Vec<String>,
     released: Vec<String>,
     strays: Vec<String>,
+    /// Unmarked changes per file now.
+    unmarked: std::collections::BTreeMap<String, u64>,
+    /// Files with more unmarked changes than accepted.
+    unmarked_growth: Vec<String>,
+    /// The first unmarked change in each grown file: (path, line).
+    unmarked_at: Vec<(String, usize)>,
 }
 
 fn budgets(fork: &Fork, base: &str) -> Result<Budgets> {
@@ -75,6 +82,30 @@ fn budgets(fork: &Fork, base: &str) -> Result<Budgets> {
         .filter(|path| !baseline.adopted.contains(path))
         .cloned()
         .collect();
+    let mut unmarked = std::collections::BTreeMap::new();
+    let mut unmarked_growth = Vec::new();
+    let mut unmarked_at = Vec::new();
+    for file in map::scan(git, &fork.root, config, base)? {
+        let count = file.unmarked.len() as u64;
+        let allowed = baseline.unmarked.get(&file.path).copied().unwrap_or(0);
+        if count > allowed {
+            unmarked_growth.push(format!(
+                "UNMARKED: {} has {count} change(s) with no `{}` reason (accepted: {allowed})",
+                file.path, config.map.marker
+            ));
+            unmarked_at.push((file.path.clone(), file.unmarked[0].line));
+        } else if count < allowed {
+            improvements.push(format!("marked: {} {allowed} -> {count}", file.path));
+        }
+        if count > 0 {
+            unmarked.insert(file.path, count);
+        }
+    }
+    for (path, allowed) in &baseline.unmarked {
+        if !unmarked.contains_key(path) && !improvements.iter().any(|i| i.contains(path.as_str())) {
+            improvements.push(format!("marked: {path} {allowed} -> 0"));
+        }
+    }
     let released = baseline
         .adopted
         .iter()
@@ -89,6 +120,9 @@ fn budgets(fork: &Fork, base: &str) -> Result<Budgets> {
         new_adopted,
         released,
         strays,
+        unmarked,
+        unmarked_growth,
+        unmarked_at,
     })
 }
 
@@ -128,11 +162,16 @@ pub(crate) fn evaluate(fork: &Fork, since: Option<&str>) -> Result<Evaluation> {
         + b.new_adopted.len()
         + drift.len()
         + ports.unverified.len()
-        + reviews.missing.len();
+        + reviews.missing.len()
+        + b.unmarked_growth.len();
     let data = json!({
         "sync_point": point,
         "budgets": { "files": b.costs.len(), "failures": b.growth, "improvements": b.improvements },
         "strays": b.strays,
+        "unmarked": {
+            "failures": b.unmarked_growth,
+            "at": b.unmarked_at.iter().map(|(p, l)| json!({ "path": p, "line": l })).collect::<Vec<_>>(),
+        },
         "adopted": { "new": b.new_adopted, "released": b.released, "count": b.adopted.len() },
         "drift": drift,
         "ports": {
@@ -186,13 +225,14 @@ fn update(fork: &Fork, accept_growth: bool) -> Result<Report> {
             b.strays.join(", ")
         )));
     }
-    let grew = !b.growth.is_empty() || !b.new_adopted.is_empty();
+    let grew = !b.growth.is_empty() || !b.new_adopted.is_empty() || !b.unmarked_growth.is_empty();
     if grew && !accept_growth {
         return Err(Error::Refused(format!(
             "budgets would grow ({}); review it, then rerun with --accept-growth and say why in the commit",
             b.growth
                 .iter()
                 .chain(b.new_adopted.iter())
+                .chain(b.unmarked_growth.iter())
                 .map(String::as_str)
                 .collect::<Vec<_>>()
                 .join("; ")
@@ -204,6 +244,7 @@ fn update(fork: &Fork, accept_growth: bool) -> Result<Report> {
     let updated = Baseline {
         files: b.costs,
         adopted: b.adopted,
+        unmarked: b.unmarked,
     };
     updated.save(&fork.root)?;
     Ok(Report::success(
@@ -255,6 +296,13 @@ fn first_fix(fork: &Fork, data: &Value, behind: usize) -> Next {
             ),
             "a synced upstream change in a review area has no recorded review",
             &sha,
+        );
+    }
+    if let Some(at) = data["unmarked"]["at"].get(0) {
+        return super::map::mark_next(
+            &config.map.marker,
+            at["path"].as_str().unwrap_or_default(),
+            at["line"].as_u64().unwrap_or(1) as usize,
         );
     }
     if data["drift"].get(0).is_some() && behind > 0 {

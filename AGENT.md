@@ -43,6 +43,10 @@ works offline. Without a fetch it reports what you last fetched.
 - **`tether verify` blocks only what the merge broke.** Failures upstream
   shipped, or that the fork already had, are listed but do not block. Fix
   every `new` failure. Never pass `--skip-verify`; that is a person's call.
+- **Say why at every change to upstream code.** Put a comment with the
+  fork's marker (`[map] marker` in the config, `tether:` by default) on or
+  just above each change you make in an upstream-derived file, with the
+  reason after it. `check` fails on a change without one.
 - **Never edit `.tether/` by hand.** Use `tether decide` and
   `tether check --update`.
 - **Never** run `git merge` of the upstream branch, `git rebase`, or

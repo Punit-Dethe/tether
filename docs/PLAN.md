@@ -1,9 +1,11 @@
 # Fork tool — design plan
 
-Status: **M0 to M3 done** (2026-11-26); M1 verified by Grain's
+Status: **M0 to M4 done** (2026-11-26); M1 verified by Grain's
 `Upstream/tether_golden.py` (8/8 identical), M2 by `tests/agent.rs` (a
 scripted agent syncs a fixture by following `next` only), M3 by
-`tests/verify.rs` (upstream's broken test is told apart from a broken merge). Name: **`tether`** (user-facing name may
+`tests/verify.rs` (upstream's broken test is told apart from a broken merge),
+M4 by `tests/map.rs` (an unmarked edit fails `check`; on Grain's real tree,
+42 files, 339 `[GRAIN]` markers, 297 unmarked changes grandfathered per file). Name: **`tether`** (user-facing name may
 change later). License: **MIT**. Repository: `Punit-Dethe/tether` for now; it
 moves to an organisation account later. No MCP server is planned (§8).
 
@@ -255,7 +257,7 @@ Designed with user approval before building (same rule as Grain's UI).
 | M1 ✅ | Merge mode at **parity with Grain's Python**: sync point, sync, closeout, inbox/ledger, decisions, budgets, owned areas, port audit | Golden tests: identical results to `Upstream/*.py` on Grain's real history (conflicts, index, ledger, budgets) |
 | M2 ✅ | Agent layer: `status`/`next`, packets, evidence gates, sessions, `AGENT.md` | An agent completes a fixture sync by following `next` only |
 | M3 ✅ | `verify` (baseline / upstream / result) | Fixture where upstream is broken is told apart from a broken merge |
-| M4 | Intent markers + generated map + unmarked-change check | Fixture: an unmarked edit fails `check` |
+| M4 ✅ | Intent markers + generated map + unmarked-change check | Fixture: an unmarked edit fails `check` |
 | M5 | Release tracking + security category | Fixture with tagged releases and a GHSA reference |
 | M6 | **Grain switches**: config written, CI moved, `Upstream/*.py` deleted, then the 72+ pending Handy commits synced with tether | Grain sync PR produced by tether |
 | M7 | Carry mode (patch-set forks) with Graftfork's safety rules | Public fixture forks re-applied onto new releases |
@@ -290,7 +292,9 @@ server, Weave used as a library dependency rather than forked.
 
 Still open:
 
-- Intent marker syntax per language (comment prefix vs a sidecar file).
+- ~~Intent marker syntax per language~~ — decided (M4): a configurable marker
+  text matched anywhere on a line (any comment syntax), plus
+  `.tether/reasons.toml` for files that cannot hold comments.
 - Whether `packet` trims context by syntax (tree-sitter, available through
   `weave-core`) in v1 or later.
 

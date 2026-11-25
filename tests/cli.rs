@@ -70,15 +70,6 @@ fn status_outside_a_repository_is_a_coded_error() {
 }
 
 #[test]
-fn unbuilt_commands_say_which_milestone_brings_them() {
-    let fx = Fixture::downloaded_fork();
-    let run = tether(&fx.fork.path, &["map"]);
-    assert_envelope(&run.json, "map");
-    assert_eq!(run.code, 1, "{}", run.stdout);
-    assert_eq!(run.json["error"]["code"], "not_implemented");
-}
-
-#[test]
 fn the_fixture_shares_no_history_with_upstream() {
     let fx = Fixture::downloaded_fork();
     let output = std::process::Command::new("git")

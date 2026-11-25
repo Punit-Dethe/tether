@@ -38,6 +38,10 @@ pub struct Config {
     #[serde(default)]
     pub budget: Budget,
 
+    /// Intent markers and the generated divergence map.
+    #[serde(default)]
+    pub map: MapConfig,
+
     #[serde(default)]
     pub port_audit: PortAudit,
 
@@ -227,7 +231,54 @@ pub struct PortAudit {
     pub notes_accepted_through: Option<String>,
 }
 
+/// Intent markers (`tether map`, and the unmarked-change check).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MapConfig {
+    /// The text that marks a fork change in upstream-derived code, written in
+    /// a comment with the reason after it: `// tether: keep the fork's limit`.
+    #[serde(default = "default_marker")]
+    pub marker: String,
+    /// How many lines above a change its marker may sit.
+    #[serde(default = "default_window")]
+    pub window: usize,
+    /// Fork path prefixes whose upstream-derived files need markers
+    /// (default: `budget.scope`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scope: Vec<String>,
+    /// Files that never need markers (generated files, data files).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exclude: Vec<String>,
+}
+
+impl Default for MapConfig {
+    fn default() -> Self {
+        MapConfig {
+            marker: default_marker(),
+            window: default_window(),
+            scope: Vec::new(),
+            exclude: Vec::new(),
+        }
+    }
+}
+
+fn default_marker() -> String {
+    "tether:".into()
+}
+fn default_window() -> usize {
+    3
+}
+
 impl Config {
+    /// Prefixes whose files need intent markers.
+    pub fn map_scope(&self) -> &[String] {
+        if self.map.scope.is_empty() {
+            &self.budget.scope
+        } else {
+            &self.map.scope
+        }
+    }
+
     pub fn path(root: &Path) -> PathBuf {
         root.join(STATE_DIR).join(CONFIG_FILE)
     }
@@ -262,6 +313,9 @@ impl Config {
             path: format!("{STATE_DIR}/{CONFIG_FILE}"),
             message,
         };
+        if self.map.marker.trim().is_empty() {
+            return Err(bad("[map] marker must not be empty".into()));
+        }
         let mut names = std::collections::BTreeSet::new();
         for step in &self.verify.steps {
             if !names.insert(step.name.as_str()) {

@@ -121,8 +121,22 @@ pub enum Command {
         #[arg(long)]
         force: bool,
     },
-    /// The divergence map, generated from the code.
-    Map,
+    /// The divergence map, generated from intent markers in the code.
+    ///
+    ///   map                              print it (unmarked changes listed)
+    ///   map --write                      also write .tether/MAP.md
+    ///   map --reason <path> --why "…"    explain a file that cannot hold comments
+    #[command(verbatim_doc_comment)]
+    Map {
+        /// Write the map to .tether/MAP.md.
+        #[arg(long, conflicts_with = "reason")]
+        write: bool,
+        /// Record why this whole fork file differs (an empty --why removes it).
+        #[arg(long, value_name = "PATH", requires = "why")]
+        reason: Option<String>,
+        #[arg(long)]
+        why: Option<String>,
+    },
     /// The CI gate: budgets, strays, owned areas, drift, port audit, reviews.
     Check {
         /// Record the current numbers as the new baseline (shrinking only).
@@ -162,7 +176,7 @@ impl Command {
             Command::Sync { .. } => "sync",
             Command::Decide { .. } => "decide",
             Command::Verify { .. } => "verify",
-            Command::Map => "map",
+            Command::Map { .. } => "map",
             Command::Check { .. } => "check",
             Command::Closeout { .. } => "closeout",
             Command::Doctor => "doctor",

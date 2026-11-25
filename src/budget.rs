@@ -33,6 +33,9 @@ pub struct Baseline {
     /// Owned-area files accepted as still identical to upstream's copy.
     #[serde(default)]
     pub adopted: Vec<String>,
+    /// Accepted count of unmarked fork changes per file (shrinks only).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub unmarked: BTreeMap<String, u64>,
 }
 
 impl Baseline {

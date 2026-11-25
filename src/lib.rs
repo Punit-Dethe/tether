@@ -13,6 +13,7 @@ pub mod engine;
 pub mod error;
 pub mod git;
 pub mod inbox;
+pub mod map;
 pub mod paths;
 pub mod ports;
 pub mod report;

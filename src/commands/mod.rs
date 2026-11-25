@@ -6,6 +6,7 @@ mod decide;
 mod doctor;
 mod inbox;
 mod init;
+mod map;
 mod packet;
 mod status;
 pub(crate) mod sync;
@@ -15,7 +16,7 @@ use std::path::{Path, PathBuf};
 
 use crate::cli::Command;
 use crate::config::Config;
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::git::Git;
 use crate::report::Report;
 
@@ -100,13 +101,16 @@ pub fn run(command: &Command, dir: &Path) -> Report {
                 force: *force,
             },
         ),
-        Command::Map => not_built("map", "M4"),
+        Command::Map { write, reason, why } => map::run(
+            dir,
+            map::Args {
+                write: *write,
+                reason: reason.as_deref(),
+                why: why.as_deref(),
+            },
+        ),
     };
     result.unwrap_or_else(|error| Report::failure(name, &error))
-}
-
-fn not_built(command: &'static str, milestone: &'static str) -> Result<Report> {
-    Err(Error::NotImplemented { command, milestone })
 }
 
 /// The repository root, git bound to it, and its loaded config.
