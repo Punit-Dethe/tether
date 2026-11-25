@@ -89,6 +89,7 @@ pub fn run(dir: &Path, rev: &str, execute: bool, no_fetch: bool) -> Result<Repor
         .with_next(next, "record the close-out"));
     }
 
+    crate::autonomy::require(&fork.config, "closeout")?;
     if engine::dirty(git)? || engine::in_merge(git)? || engine::pending_sync(git)?.is_some() {
         return Err(Error::Refused(
             "the working tree must be clean, with no merge or sync in progress".into(),

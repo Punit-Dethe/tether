@@ -5,9 +5,11 @@ use std::path::Path;
 use serde_json::json;
 
 use super::Fork;
+use crate::autonomy;
 use crate::engine;
 use crate::error::{Error, Result};
-use crate::report::Report;
+use crate::report::{Next, NextKind, Report};
+use crate::session::{self, Session};
 use crate::syncpoint;
 
 pub struct Args<'a> {
@@ -122,6 +124,17 @@ fn start(fork: &Fork, args: &Args) -> Result<Report> {
     )?;
     let owned = engine::apply_owned(git, &fork.config, &target)?;
     let remaining = engine::conflicted(git)?;
+    session::save(
+        git,
+        &Session {
+            base: base.clone(),
+            target: target.clone(),
+            started: session::now(),
+            conflicts: remaining.clone(),
+            owned_resolved: owned.resolved.clone(),
+            owned_reverted: owned.reverted.clone(),
+        },
+    )?;
 
     let data = json!({
         "base": base, "target": target, "behind": behind,
@@ -143,11 +156,23 @@ fn start(fork: &Fork, args: &Args) -> Result<Report> {
         format!("{} conflict(s) need a decision.", remaining.len()),
         data,
     )
-    .with_next(
-        "tether sync --continue",
-        "after resolving each listed file and `git add`-ing it",
-    )
+    .then(resolve_next(&remaining))
     .needs_action())
+}
+
+/// Resolve the listed conflicts, then continue.
+pub(crate) fn resolve_next(conflicts: &[String]) -> Next {
+    let first = &conflicts[0];
+    Next::of(
+        NextKind::Edit,
+        "tether sync --continue",
+        format!(
+            "resolve {} conflicted file(s) ({}), keeping the fork's intent and upstream's fix, remove every conflict marker and `git add` each",
+            conflicts.len(),
+            conflicts.join(", ")
+        ),
+    )
+    .with_packet(format!("tether packet {first}"))
 }
 
 /// Conflicts a merge would raise, split into (needs a person, owned area),
@@ -176,7 +201,15 @@ fn preview(fork: &Fork, base: &str, target: &str) -> Result<(Vec<String>, Vec<St
         .skip(1)
         .take_while(|line| !line.is_empty())
     {
-        let is_owned = fork.config.is_owned(path);
+        let relocated_away = fork
+            .config
+            .relocations
+            .contains_key(&fork.config.to_upstream_path(path))
+            && !fork
+                .git
+                .run(&["cat-file", "-e", &format!("HEAD:{path}")])?
+                .success();
+        let is_owned = fork.config.is_owned(path) || relocated_away;
         if is_owned {
             owned.push(path.to_owned());
         } else {
@@ -198,13 +231,18 @@ fn finish(fork: &Fork) -> Result<Report> {
             format!("{} conflict(s) are still unresolved.", remaining.len()),
             json!({ "conflicts": remaining, "target": target }),
         )
-        .with_next(
-            "tether sync --continue",
-            "after resolving each listed file and `git add`-ing it",
-        )
+        .then(resolve_next(&remaining))
         .needs_action());
     }
+    let markers = files_with_markers(fork)?;
+    if !markers.is_empty() {
+        return Err(Error::Refused(format!(
+            "conflict markers are still in {}; finish resolving before committing",
+            markers.join(", ")
+        )));
+    }
     let commit = engine::commit_sync(git)?;
+    session::clear(git)?;
     Ok(Report::success(
         "sync",
         format!("Recorded the sync to {}.", &target[..8]),
@@ -220,11 +258,33 @@ fn abort(fork: &Fork) -> Result<Report> {
             "no tether sync is in progress; nothing was changed".into(),
         ));
     }
+    autonomy::require(&fork.config, "abort")?;
     git.ok(&["reset", "--hard", "--quiet", "HEAD"])?;
     engine::remove_squash_msg(git)?;
+    session::clear(git)?;
     Ok(Report::success(
         "sync",
         "Dropped the prepared sync; the working tree is back at HEAD.",
         json!({}),
     ))
+}
+
+/// Files the sync touched that still hold conflict markers (a `git add`
+/// on an unresolved file clears the conflict flag but not the markers).
+fn files_with_markers(fork: &Fork) -> Result<Vec<String>> {
+    let staged = fork.git.raw(&["diff", "--cached", "--name-only", "HEAD"])?;
+    let mut found = Vec::new();
+    for path in staged.lines().map(str::trim).filter(|p| !p.is_empty()) {
+        let Ok(text) = std::fs::read(fork.root.join(path)) else {
+            continue;
+        };
+        let has = |marker: &[u8]| {
+            text.split(|&b| b == b'\n')
+                .any(|line| line.starts_with(marker))
+        };
+        if has(b"<<<<<<< ") && has(b">>>>>>> ") {
+            found.push(path.to_owned());
+        }
+    }
+    Ok(found)
 }

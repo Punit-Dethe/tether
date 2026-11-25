@@ -10,11 +10,51 @@ use serde_json::Value;
 
 use crate::error::Error;
 
+/// How an agent should treat [`Next::command`].
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum NextKind {
+    /// Run the command exactly as written.
+    #[default]
+    Run,
+    /// Edit files first (see `why` and `packet`), then run the command.
+    Edit,
+    /// A `tether decide` command: read `packet`, then replace every
+    /// `<…>` placeholder with what you found and run it.
+    Decide,
+    /// Only a person may do this; stop and ask them.
+    AskHuman,
+}
+
 /// The single action tether recommends next, and why.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct Next {
     pub command: String,
     pub why: String,
+    pub kind: NextKind,
+    /// A command that prints everything needed to act (a work packet).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub packet: Option<String>,
+}
+
+impl Next {
+    pub fn run(command: impl Into<String>, why: impl Into<String>) -> Self {
+        Self::of(NextKind::Run, command, why)
+    }
+
+    pub fn of(kind: NextKind, command: impl Into<String>, why: impl Into<String>) -> Self {
+        Next {
+            command: command.into(),
+            why: why.into(),
+            kind,
+            packet: None,
+        }
+    }
+
+    pub fn with_packet(mut self, packet: impl Into<String>) -> Self {
+        self.packet = Some(packet.into());
+        self
+    }
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -34,6 +74,9 @@ pub struct Report {
     pub data: Value,
     pub next: Option<Next>,
     pub error: Option<ErrorInfo>,
+    /// Longer text for people (a packet's body); JSON carries it in `data`.
+    #[serde(skip)]
+    pub detail: Option<String>,
     /// The command worked but found something a person or agent must act on.
     #[serde(skip)]
     pub action_needed: bool,
@@ -49,6 +92,7 @@ impl Report {
             data,
             next: None,
             error: None,
+            detail: None,
             action_needed: false,
         }
     }
@@ -65,6 +109,7 @@ impl Report {
                 code: error.code(),
                 message: error.to_string(),
             }),
+            detail: None,
             action_needed: false,
         }
     }
@@ -75,11 +120,17 @@ impl Report {
         self
     }
 
-    pub fn with_next(mut self, command: impl Into<String>, why: impl Into<String>) -> Self {
-        self.next = Some(Next {
-            command: command.into(),
-            why: why.into(),
-        });
+    pub fn with_next(self, command: impl Into<String>, why: impl Into<String>) -> Self {
+        self.then(Next::run(command, why))
+    }
+
+    pub fn with_detail(mut self, detail: String) -> Self {
+        self.detail = Some(detail);
+        self
+    }
+
+    pub fn then(mut self, next: Next) -> Self {
+        self.next = Some(next);
         self
     }
 
@@ -102,6 +153,9 @@ impl Report {
         let mut text = format!("{}\n", self.summary);
         if let Some(next) = &self.next {
             text.push_str(&format!("next: {}  ({})\n", next.command, next.why));
+            if let Some(packet) = &next.packet {
+                text.push_str(&format!("      context: {packet}\n"));
+            }
         }
         text
     }

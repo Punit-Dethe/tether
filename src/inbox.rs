@@ -293,6 +293,40 @@ impl AppliedHere {
     }
 }
 
+/// Find one tracked item by short sha, `#PR` or bare PR number.
+pub fn resolve<'a>(items: &'a [Item], reference: &str) -> Result<&'a Item> {
+    let reference = reference.trim();
+    let pr = reference.strip_prefix('#').or_else(|| {
+        (reference.len() <= 6 && reference.bytes().all(|b| b.is_ascii_digit())).then_some(reference)
+    });
+    let hits: Vec<&Item> = match pr {
+        Some(pr) => items
+            .iter()
+            .filter(|i| i.pr.as_deref() == Some(pr))
+            .collect(),
+        None => {
+            let prefix = reference.to_ascii_lowercase();
+            items
+                .iter()
+                .filter(|i| i.sha.starts_with(&prefix))
+                .collect()
+        }
+    };
+    match hits[..] {
+        [one] => Ok(one),
+        [] => Err(Error::Refused(format!(
+            "no tracked upstream commit matches `{reference}`"
+        ))),
+        _ => Err(Error::Refused(format!(
+            "`{reference}` is ambiguous: {}",
+            hits.iter()
+                .map(|i| &i.sha[..10])
+                .collect::<Vec<_>>()
+                .join(", ")
+        ))),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

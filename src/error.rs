@@ -46,6 +46,11 @@ pub enum Error {
     #[error("{0}")]
     Refused(String),
 
+    #[error(
+        "`{0}` needs a person: the fork's policy (agent.needs_human) does not let an agent do it alone"
+    )]
+    NeedsHuman(String),
+
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -65,6 +70,7 @@ impl Error {
             Error::SyncPointMissing(_) => "sync_point_missing",
             Error::SyncPointsDiverge { .. } => "sync_points_diverge",
             Error::Refused(_) => "refused",
+            Error::NeedsHuman(_) => "needs_human",
             Error::Io(_) => "io",
         }
     }

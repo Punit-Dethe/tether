@@ -8,13 +8,14 @@ tether is a small command-line tool built for AI coding agents first and
 people second. Every command can answer in JSON with the same shape, and
 always says what to do next.
 
-> **Status: early — milestone M1 done.** Working now: `doctor`, `init`,
-> `status`, `inbox`, `decide`, `sync`, `closeout` and `check`. They give the
-> same results as the Python tooling they replace on a real product fork's
-> history (Grain on Handy: 299 tracked commits, a 72-commit sync with 13
-> conflicts, 42 budgets, the port audit and the review gate). `packet`,
-> `verify` and `map` answer `not_implemented` and name their milestone. See
-> [docs/PLAN.md](docs/PLAN.md).
+> **Status: early — milestones M1 and M2 done.** Working now: `doctor`,
+> `init`, `status`, `inbox`, `packet`, `decide`, `sync`, `closeout` and
+> `check`. They give the same results as the Python tooling they replace on a
+> real product fork's history (Grain on Handy: 299 tracked commits, a
+> 72-commit sync with 13 conflicts, 42 budgets, the port audit and the review
+> gate). An AI agent can run a whole sync by following `tether status` alone
+> (see [AGENT.md](AGENT.md)). `verify` and `map` answer `not_implemented` and
+> name their milestone. See [docs/PLAN.md](docs/PLAN.md).
 
 ## What it will do
 

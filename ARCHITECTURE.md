@@ -23,10 +23,13 @@ src/engine.rs    merge mode: graft + merge --squash, owned-area rules, commit
 src/review.rs    review gate: commits in review areas need evidence
 src/budget.rs    divergence budgets, strays, adoption, drift (.tether/budgets.toml)
 src/ports.rs     port audit: synced fixes to relocated files need records
+src/session.rs   the sync in progress (.git/tether/session.json, never committed)
+src/autonomy.rs  what an agent (TETHER_ACTOR=agent) may do alone
 src/paths.rs     fnmatch-style patterns
 src/time.rs      the one date format tether reads
 tests/support/   throwaway two-repo fixtures with no shared history
 tests/cli.rs     end-to-end tests against the built binary
+tests/agent.rs   a scripted agent syncs a fixture by following `next` only
 ```
 
 ## Rules
@@ -48,6 +51,5 @@ tests/cli.rs     end-to-end tests against the built binary
 
 ## Where things will go
 
-Planned modules (see PLAN.md §6): carry mode, `map`, `verify`, `packet`,
-`session`, and an optional
-`semantic` merge driver behind a cargo feature.
+Planned modules (see PLAN.md §6): carry mode, `map`, `verify`, and an
+optional `semantic` merge driver behind a cargo feature.

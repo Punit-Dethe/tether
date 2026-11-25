@@ -108,8 +108,14 @@ pub struct Run {
 
 /// Run the built tether binary with `--json` in `dir`.
 pub fn tether(dir: &Path, args: &[&str]) -> Run {
+    tether_with(dir, args, &[])
+}
+
+/// [`tether`], with extra environment variables (e.g. `TETHER_ACTOR`).
+pub fn tether_with(dir: &Path, args: &[&str], env: &[(&str, &str)]) -> Run {
     let output = Command::new(env!("CARGO_BIN_EXE_tether"))
         .args(args)
+        .envs(env.iter().copied())
         .arg("--json")
         .current_dir(dir)
         .env("GIT_CONFIG_NOSYSTEM", "1")

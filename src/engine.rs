@@ -128,7 +128,15 @@ pub struct OwnedResolution {
 pub fn apply_owned(git: &Git, config: &Config, target: &str) -> Result<OwnedResolution> {
     let mut outcome = OwnedResolution::default();
     for path in conflicted(git)? {
-        if config.is_owned(&path) {
+        // A relocated upstream file the fork deleted: its fixes reach the
+        // fork by porting, which the port audit enforces, never by merge.
+        let relocated_away = config
+            .relocations
+            .contains_key(&config.to_upstream_path(&path))
+            && !git
+                .run(&["cat-file", "-e", &format!("HEAD:{path}")])?
+                .success();
+        if config.is_owned(&path) || relocated_away {
             keep_ours(git, &path)?;
             outcome.resolved.push(path);
         }

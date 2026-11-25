@@ -6,8 +6,9 @@ mod decide;
 mod doctor;
 mod inbox;
 mod init;
+mod packet;
 mod status;
-mod sync;
+pub(crate) mod sync;
 
 use std::path::{Path, PathBuf};
 
@@ -57,7 +58,7 @@ pub fn run(command: &Command, dir: &Path) -> Report {
                 since: since.as_deref(),
             },
         ),
-        Command::Packet { .. } => not_built("packet", "M2"),
+        Command::Packet { item } => packet::run(dir, item),
         Command::Decide {
             item,
             outcome,

@@ -48,8 +48,14 @@ fn init_writes_config_and_records_the_sync_point() {
 #[test]
 fn status_says_sync_when_upstream_moved() {
     let (fx, first, ..) = synced_fork();
+    // init leaves its config uncommitted: status asks for that first.
+    let run = tether(&fx.fork.path, &["status"]);
+    assert_eq!(run.json["data"]["phase"], "record", "{}", run.stdout);
+    fx.fork.git(&["add", ".tether"]);
+    fx.fork.git(&["commit", "-q", "-m", "Add tether config"]);
     let run = tether(&fx.fork.path, &["status"]);
     assert_eq!(run.code, 2, "{}", run.stdout);
+    assert_eq!(run.json["data"]["phase"], "behind");
     assert_eq!(run.json["data"]["behind"], 2);
     assert_eq!(run.json["data"]["sync_point"]["upstream"], first.as_str());
     assert_eq!(run.json["next"]["command"], "tether sync");

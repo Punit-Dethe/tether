@@ -40,6 +40,40 @@ pub struct Config {
 
     #[serde(default)]
     pub port_audit: PortAudit,
+
+    #[serde(default)]
+    pub agent: Agent,
+}
+
+/// How tether works with AI agents.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Agent {
+    /// Upper bound on a work packet's size, in bytes (~4 bytes per token).
+    #[serde(default = "default_packet_bytes")]
+    pub packet_bytes: usize,
+    /// Actions an agent may not take alone (when `TETHER_ACTOR=agent`).
+    /// Patterns: `accept-growth`, `closeout`, `abort`, `merged`, `ignored`,
+    /// `pending`, `note`, `clear`, `port:<outcome>`, `review:<area>`;
+    /// `*` matches anything.
+    #[serde(default = "default_needs_human")]
+    pub needs_human: Vec<String>,
+}
+
+impl Default for Agent {
+    fn default() -> Self {
+        Agent {
+            packet_bytes: default_packet_bytes(),
+            needs_human: default_needs_human(),
+        }
+    }
+}
+
+fn default_packet_bytes() -> usize {
+    48_000
+}
+fn default_needs_human() -> Vec<String> {
+    vec!["accept-growth".into()]
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -197,6 +231,14 @@ impl Config {
             })?;
         }
         Ok(())
+    }
+
+    /// Does policy reserve `action` for a person?
+    pub fn needs_human(&self, action: &str) -> bool {
+        self.agent
+            .needs_human
+            .iter()
+            .any(|pattern| glob_match(pattern, action))
     }
 
     /// The upstream branch as a local ref, e.g. `upstream/main`.

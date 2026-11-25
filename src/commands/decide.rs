@@ -5,9 +5,10 @@ use std::path::Path;
 use serde_json::json;
 
 use super::Fork;
+use crate::autonomy;
 use crate::decisions::{self, Port, PortOutcome, Review, ReviewOutcome, Status};
 use crate::error::{Error, Result};
-use crate::inbox::{self, Item, State};
+use crate::inbox::{self, State};
 use crate::report::Report;
 
 pub struct Args<'a> {
@@ -25,10 +26,20 @@ pub struct Args<'a> {
 pub fn run(dir: &Path, args: Args) -> Result<Report> {
     let fork = Fork::open(dir)?;
     let inbox = inbox::build(&fork.git, &fork.root, &fork.config)?;
-    let item = resolve(&inbox.items, args.item)?;
+    let item = inbox::resolve(&inbox.items, args.item)?;
     let all = decisions::load(&fork.root)?;
     let mut decision = all.get(&item.sha).cloned().unwrap_or_default();
     let refuse = |message: String| Err(Error::Refused(message));
+    let action = if args.clear {
+        "clear".to_owned()
+    } else if args.port.is_some() {
+        format!("port:{}", args.outcome.unwrap_or_default())
+    } else if let Some(area) = args.review {
+        format!("review:{area}")
+    } else {
+        args.outcome.unwrap_or("note").to_owned()
+    };
+    autonomy::require(&fork.config, &action)?;
 
     if args.clear {
         decision = Default::default();
@@ -124,38 +135,4 @@ pub fn run(dir: &Path, args: Args) -> Result<Report> {
         summary,
         json!({ "sha": item.sha, "subject": item.subject, "file": file, "decision": decision }),
     ))
-}
-
-/// A short sha or `#123` / `123` pull-request reference → one tracked commit.
-fn resolve<'a>(items: &'a [Item], reference: &str) -> Result<&'a Item> {
-    let reference = reference.trim();
-    let pr = reference.strip_prefix('#').or_else(|| {
-        (reference.len() <= 6 && reference.bytes().all(|b| b.is_ascii_digit())).then_some(reference)
-    });
-    let hits: Vec<&Item> = match pr {
-        Some(pr) => items
-            .iter()
-            .filter(|i| i.pr.as_deref() == Some(pr))
-            .collect(),
-        None => {
-            let prefix = reference.to_ascii_lowercase();
-            items
-                .iter()
-                .filter(|i| i.sha.starts_with(&prefix))
-                .collect()
-        }
-    };
-    match hits[..] {
-        [one] => Ok(one),
-        [] => Err(Error::Refused(format!(
-            "no tracked upstream commit matches `{reference}`"
-        ))),
-        _ => Err(Error::Refused(format!(
-            "`{reference}` is ambiguous: {}",
-            hits.iter()
-                .map(|i| &i.sha[..10])
-                .collect::<Vec<_>>()
-                .join(", ")
-        ))),
-    }
 }

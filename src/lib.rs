@@ -3,6 +3,7 @@
 //! The binary is a thin shell over this library so the same engine can be
 //! driven by tests and, later, embedded by other tools.
 
+pub mod autonomy;
 pub mod budget;
 pub mod cli;
 pub mod commands;
@@ -16,5 +17,6 @@ pub mod paths;
 pub mod ports;
 pub mod report;
 pub mod review;
+pub mod session;
 pub mod syncpoint;
 pub mod time;

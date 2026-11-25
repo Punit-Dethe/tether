@@ -10,6 +10,9 @@ use crate::git::Git;
 use crate::report::Report;
 use crate::syncpoint;
 
+/// The agent loop, written to `.tether/AGENT.md` by `tether init`.
+pub const AGENT_GUIDE: &str = include_str!("../../AGENT.md");
+
 pub fn run(dir: &Path, remote: &str, sync_point: Option<&str>) -> Result<Report> {
     let root = Git::new(dir).toplevel()?;
     let git = Git::new(&root);
@@ -29,6 +32,13 @@ pub fn run(dir: &Path, remote: &str, sync_point: Option<&str>) -> Result<Report>
     } else {
         Config::load(&root)?
     };
+
+    // The agent loop, next to the config, so any agent working here finds it.
+    let guide = Config::path(&root).with_file_name("AGENT.md");
+    if !guide.exists() {
+        std::fs::create_dir_all(guide.parent().expect("guide has a parent"))?;
+        std::fs::write(&guide, AGENT_GUIDE)?;
+    }
 
     let recorded = match sync_point {
         Some(rev) => Some(record_sync_point(&git, &config, rev)?),
@@ -97,6 +107,7 @@ fn detect(git: &Git, remote: &str) -> Result<Config> {
         relocations: Default::default(),
         budget: Default::default(),
         port_audit: Default::default(),
+        agent: Default::default(),
     })
 }
 
