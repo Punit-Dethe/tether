@@ -486,7 +486,11 @@ mod tests {
         assert!(none("Bump to CVE-12 style ids", "see XCVE-2026-12345"));
         assert!(none("Tidy the ghsa-abc docs", "GHSA-abc-def"));
         assert_eq!(
-            security_signals("Harden auth (#1)", "Fixes cve-2026-1234 and CVE-2026-1234.", &words),
+            security_signals(
+                "Harden auth (#1)",
+                "Fixes cve-2026-1234 and CVE-2026-1234.",
+                &words
+            ),
             vec!["CVE-2026-1234"]
         );
         assert_eq!(
