@@ -128,9 +128,7 @@ pub struct OwnedResolution {
 pub fn apply_owned(git: &Git, config: &Config, target: &str) -> Result<OwnedResolution> {
     let mut outcome = OwnedResolution::default();
     for path in conflicted(git)? {
-        if config.owned.iter().any(|area| {
-            path.starts_with(&area.path) && !area.except.iter().any(|e| path.starts_with(e))
-        }) {
+        if config.is_owned(&path) {
             keep_ours(git, &path)?;
             outcome.resolved.push(path);
         }

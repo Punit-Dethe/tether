@@ -106,8 +106,19 @@ pub enum Command {
     Verify,
     /// The divergence map, generated from the code.
     Map,
-    /// The CI gate: budgets, unmarked changes, owned areas, port audit.
-    Check,
+    /// The CI gate: budgets, strays, owned areas, drift, port audit, reviews.
+    Check {
+        /// Record the current numbers as the new baseline (shrinking only).
+        #[arg(long)]
+        update: bool,
+        /// With --update: also accept growth, after reviewing it.
+        #[arg(long, requires = "update")]
+        accept_growth: bool,
+        /// Check reviews for everything synced since this fork revision
+        /// (default: since the previous sync point).
+        #[arg(long, value_name = "REV")]
+        since: Option<String>,
+    },
     /// Move the sync point over fully decided commits without changing a file.
     Closeout {
         /// Upstream commit to move the sync point to.
@@ -135,7 +146,7 @@ impl Command {
             Command::Decide { .. } => "decide",
             Command::Verify => "verify",
             Command::Map => "map",
-            Command::Check => "check",
+            Command::Check { .. } => "check",
             Command::Closeout { .. } => "closeout",
             Command::Doctor => "doctor",
         }

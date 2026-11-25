@@ -8,12 +8,12 @@ tether is a small command-line tool built for AI coding agents first and
 people second. Every command can answer in JSON with the same shape, and
 always says what to do next.
 
-> **Status: early.** Working now: `doctor`, `init`, `status`, `inbox`,
-> `decide`, `sync` and `closeout`. Checked against Grain's real history:
-> `inbox` matches its Python ledger row for row (299 commits), and `sync` of
-> the 72 pending upstream commits gives the same 13 conflicts and an identical
-> index, working tree and commit message. `check` (budgets, port audit) comes
-> next; other commands answer `not_implemented` and name their milestone. See
+> **Status: early — milestone M1 done.** Working now: `doctor`, `init`,
+> `status`, `inbox`, `decide`, `sync`, `closeout` and `check`. They give the
+> same results as the Python tooling they replace on a real product fork's
+> history (Grain on Handy: 299 tracked commits, a 72-commit sync with 13
+> conflicts, 42 budgets, the port audit and the review gate). `packet`,
+> `verify` and `map` answer `not_implemented` and name their milestone. See
 > [docs/PLAN.md](docs/PLAN.md).
 
 ## What it will do

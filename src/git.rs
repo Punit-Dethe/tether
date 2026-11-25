@@ -160,6 +160,68 @@ impl Git {
             .collect())
     }
 
+    /// `(path, blob id)` for every file under `prefixes` in `rev`
+    /// (all files when `prefixes` is empty).
+    pub fn ls_tree(&self, rev: &str, prefixes: &[String]) -> Result<Vec<(String, String)>> {
+        let mut args = vec!["ls-tree", "-r", "-z", "--full-tree", rev, "--"];
+        args.extend(prefixes.iter().map(String::as_str));
+        let out = self.raw(&args)?;
+        Ok(out
+            .split('\0')
+            .filter_map(|entry| {
+                let (meta, path) = entry.split_once('\t')?;
+                let mut fields = meta.split(' ');
+                let (_mode, kind, id) = (fields.next()?, fields.next()?, fields.next()?);
+                (kind == "blob").then(|| (path.to_owned(), id.to_owned()))
+            })
+            .collect())
+    }
+
+    /// The contents of many blobs through one `git cat-file --batch`.
+    pub fn blobs(&self, ids: &[&str]) -> Result<Vec<Vec<u8>>> {
+        use std::io::{BufRead, BufReader, Read, Write};
+        use std::process::Stdio;
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut child = Command::new("git")
+            .args(["cat-file", "--batch"])
+            .current_dir(&self.dir)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|error| match error.kind() {
+                std::io::ErrorKind::NotFound => Error::GitMissing,
+                _ => Error::Io(error),
+            })?;
+        let mut stdin = child.stdin.take().expect("piped stdin");
+        let request: String = ids.iter().map(|id| format!("{id}\n")).collect();
+        // Write from another thread so a full stdout pipe cannot deadlock us.
+        let writer = std::thread::spawn(move || stdin.write_all(request.as_bytes()));
+        let mut reader = BufReader::new(child.stdout.take().expect("piped stdout"));
+        let mut out = Vec::with_capacity(ids.len());
+        for id in ids {
+            let mut header = String::new();
+            reader.read_line(&mut header)?;
+            let size: usize = header
+                .split_whitespace()
+                .nth(2)
+                .and_then(|size| size.parse().ok())
+                .ok_or_else(|| Error::GitFailed {
+                    args: format!("cat-file --batch ({id})"),
+                    stderr: header.trim().to_owned(),
+                })?;
+            let mut body = vec![0; size + 1]; // contents, then a newline
+            reader.read_exact(&mut body)?;
+            body.pop();
+            out.push(body);
+        }
+        writer.join().expect("writer thread")?;
+        child.wait()?;
+        Ok(out)
+    }
+
     /// Absolute path of a file inside the git directory (`SQUASH_MSG`, ...).
     /// Correct in linked worktrees, where `.git` is a file.
     pub fn git_path(&self, name: &str) -> Result<PathBuf> {

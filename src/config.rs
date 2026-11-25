@@ -218,6 +218,31 @@ impl Config {
         fork_path.to_owned()
     }
 
+    /// The path an upstream file has in the fork (the reverse of
+    /// [`Config::to_upstream_path`]).
+    pub fn to_fork_path(&self, upstream_path: &str) -> String {
+        for moved in &self.moved {
+            if let Some(rest) = upstream_path.strip_prefix(&moved.upstream) {
+                if !upstream_path.starts_with(&moved.fork) {
+                    return format!("{}{rest}", moved.fork);
+                }
+            }
+        }
+        upstream_path.to_owned()
+    }
+
+    /// Does upstream lose every conflict at `path`? True when the path, or
+    /// where the fork moved it to, is inside an owned area (and not in one of
+    /// its exceptions).
+    pub fn is_owned(&self, path: &str) -> bool {
+        let owned = |path: &str| {
+            self.owned.iter().any(|area| {
+                path.starts_with(&area.path) && !area.except.iter().any(|e| path.starts_with(e))
+            })
+        };
+        owned(path) || owned(&self.to_fork_path(path))
+    }
+
     /// Review areas an upstream change to `path` falls in.
     pub fn review_areas_for<'a>(&'a self, path: &str) -> impl Iterator<Item = &'a str> + 'a {
         let path = path.to_owned();

@@ -121,6 +121,23 @@ pub fn sync_point(git: &Git, rev: &str) -> Result<SyncPoint> {
     Ok(SyncPoint { commit, upstream })
 }
 
+/// The earliest sync point recorded in `rev`'s history: the one every other
+/// recorded sync point descends from (markers are linear, see
+/// [`sync_point`]).
+pub fn first_sync_point(git: &Git, rev: &str) -> Result<String> {
+    let mut shas: Vec<String> = markers(git, rev)?.into_iter().map(|(_, sha)| sha).collect();
+    shas.dedup();
+    let mut first = shas
+        .pop()
+        .ok_or_else(|| Error::NoSyncPoint(rev.to_owned()))?;
+    for sha in shas {
+        if git.is_ancestor(&sha, &first)? {
+            first = sha;
+        }
+    }
+    Ok(first)
+}
+
 /// Every upstream commit the fork already contains at `rev`.
 pub fn absorbed(git: &Git, rev: &str) -> Result<HashSet<String>> {
     let point = sync_point(git, rev)?;

@@ -176,9 +176,7 @@ fn preview(fork: &Fork, base: &str, target: &str) -> Result<(Vec<String>, Vec<St
         .skip(1)
         .take_while(|line| !line.is_empty())
     {
-        let is_owned = fork.config.owned.iter().any(|area| {
-            path.starts_with(&area.path) && !area.except.iter().any(|e| path.starts_with(e))
-        });
+        let is_owned = fork.config.is_owned(path);
         if is_owned {
             owned.push(path.to_owned());
         } else {

@@ -21,6 +21,8 @@ src/decisions.rs .tether/decisions/<sha>.toml: status, note, port and review
 src/inbox.rs     derived list of tracked upstream commits and their state
 src/engine.rs    merge mode: graft + merge --squash, owned-area rules, commit
 src/review.rs    review gate: commits in review areas need evidence
+src/budget.rs    divergence budgets, strays, adoption, drift (.tether/budgets.toml)
+src/ports.rs     port audit: synced fixes to relocated files need records
 src/paths.rs     fnmatch-style patterns
 src/time.rs      the one date format tether reads
 tests/support/   throwaway two-repo fixtures with no shared history

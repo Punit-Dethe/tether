@@ -1,5 +1,6 @@
 //! What each command does. Every command returns a [`Report`]; none prints.
 
+mod check;
 mod closeout;
 mod decide;
 mod doctor;
@@ -44,7 +45,18 @@ pub fn run(command: &Command, dir: &Path) -> Report {
             execute,
             no_fetch,
         } => closeout::run(dir, rev, *execute, *no_fetch),
-        Command::Check => not_built("check", "M1"),
+        Command::Check {
+            update,
+            accept_growth,
+            since,
+        } => check::run(
+            dir,
+            check::Args {
+                update: *update,
+                accept_growth: *accept_growth,
+                since: since.as_deref(),
+            },
+        ),
         Command::Packet { .. } => not_built("packet", "M2"),
         Command::Decide {
             item,

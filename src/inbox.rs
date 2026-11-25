@@ -96,10 +96,14 @@ pub fn build(git: &Git, root: &Path, config: &Config) -> Result<Inbox> {
         .since
         .as_deref()
         .and_then(crate::time::parse_utc);
+    // Without a date, tracking starts at the first sync point the fork ever
+    // recorded: everything after it was synced (and must stay auditable) or
+    // is still pending.
     let walk = if floor.is_some() {
         target.clone()
     } else {
-        range
+        let first = syncpoint::first_sync_point(git, "HEAD")?;
+        format!("{first}..{target}")
     };
     let absorbed: HashSet<String> = git.rev_list(&point.upstream)?.into_iter().collect();
     let decisions = decisions::load(root)?;
