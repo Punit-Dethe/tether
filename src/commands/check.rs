@@ -135,7 +135,7 @@ pub(crate) fn evaluate(fork: &Fork, since: Option<&str>) -> Result<Evaluation> {
     let drift = budget::drift(git, config, base, &track::target(git, config)?.commit)?;
     let all = decisions::load(&fork.root)?;
     let inbox = inbox::build(git, &fork.root, config)?;
-    let ports = ports::audit(git, config, &all, &inbox)?;
+    let ports = ports::audit(git, &fork.root, config, &all, &inbox)?;
 
     // Reviews: everything the sync point moved past since `since` (default:
     // the previous sync point).

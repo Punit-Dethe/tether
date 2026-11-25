@@ -345,6 +345,11 @@ pub struct PortAudit {
     /// plain note instead of per-file port records.
     #[serde(default)]
     pub notes_accepted_through: Option<String>,
+    /// A Markdown file whose table rows queue deferred ports: a `deferred`
+    /// port record counts only while its commit's full sha is in the first
+    /// column of a row. Without it, `deferred` always counts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deferred_queue: Option<String>,
 }
 
 /// Intent markers (`tether map`, and the unmarked-change check).

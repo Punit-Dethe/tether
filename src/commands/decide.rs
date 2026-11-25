@@ -50,7 +50,22 @@ pub fn run(dir: &Path, args: Args) -> Result<Report> {
         let outcome = match args.outcome {
             Some("ported") => PortOutcome::Ported,
             Some("not-applicable") => PortOutcome::NotApplicable,
-            Some("deferred") => PortOutcome::Deferred,
+            Some("deferred") => {
+                if let Some(queue) = crate::ports::deferred_queue(&fork.root, &fork.config)? {
+                    if !queue.contains(&item.sha) {
+                        return refuse(format!(
+                            "a deferral counts only once {} is queued in {}; add a row for it first",
+                            item.sha,
+                            fork.config
+                                .port_audit
+                                .deferred_queue
+                                .as_deref()
+                                .unwrap_or_default()
+                        ));
+                    }
+                }
+                PortOutcome::Deferred
+            }
             _ => return refuse("a port outcome is ported, not-applicable or deferred".into()),
         };
         let evidence = args.evidence.unwrap_or("").trim();

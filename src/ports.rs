@@ -6,6 +6,9 @@
 //! the code that runs. So every synced upstream commit that touched such a
 //! file needs a recorded port decision with evidence.
 
+use std::collections::HashSet;
+use std::path::Path;
+
 use serde::Serialize;
 
 use crate::config::Config;
@@ -35,7 +38,37 @@ pub struct Audit {
     pub pending: Vec<Entry>,
 }
 
-pub fn audit(git: &Git, config: &Config, decisions: &Decisions, inbox: &Inbox) -> Result<Audit> {
+/// Full shas queued in the first column of the deferred-ports table, or
+/// `None` when no queue is configured (every deferral then counts).
+pub fn deferred_queue(root: &Path, config: &Config) -> Result<Option<HashSet<String>>> {
+    let Some(file) = &config.port_audit.deferred_queue else {
+        return Ok(None);
+    };
+    let text = match std::fs::read_to_string(root.join(file)) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(error.into()),
+    };
+    let mut queued = HashSet::new();
+    for line in text.lines().filter(|l| l.starts_with('|')) {
+        let first = line.split('|').nth(1).unwrap_or_default();
+        for word in first.split(|c: char| !c.is_ascii_hexdigit()) {
+            if word.len() == 40 {
+                queued.insert(word.to_ascii_lowercase());
+            }
+        }
+    }
+    Ok(Some(queued))
+}
+
+pub fn audit(
+    git: &Git,
+    root: &Path,
+    config: &Config,
+    decisions: &Decisions,
+    inbox: &Inbox,
+) -> Result<Audit> {
+    let queue = deferred_queue(root, config)?;
     let legacy_through = match &config.port_audit.notes_accepted_through {
         Some(rev) => git.commit_sha(rev)?,
         None => None,
@@ -50,7 +83,11 @@ pub fn audit(git: &Git, config: &Config, decisions: &Decisions, inbox: &Inbox) -
             .filter(|file| {
                 records
                     .and_then(|ports| ports.get(*file))
-                    .is_none_or(|port| port.evidence.trim().is_empty())
+                    .is_none_or(|port| {
+                        port.evidence.trim().is_empty()
+                            || (port.outcome == PortOutcome::Deferred
+                                && queue.as_ref().is_some_and(|q| !q.contains(&item.sha)))
+                    })
             })
             .cloned()
             .collect();
