@@ -1,0 +1,232 @@
+//! `tether sync`: bring upstream in as one squashed, single-parent commit.
+
+use std::path::Path;
+
+use serde_json::json;
+
+use super::Fork;
+use crate::engine;
+use crate::error::{Error, Result};
+use crate::report::Report;
+use crate::syncpoint;
+
+pub struct Args<'a> {
+    pub target: Option<&'a str>,
+    pub dry_run: bool,
+    pub continue_: bool,
+    pub abort: bool,
+    pub no_fetch: bool,
+}
+
+pub fn run(dir: &Path, args: Args) -> Result<Report> {
+    let fork = Fork::open(dir)?;
+    if args.continue_ {
+        return finish(&fork);
+    }
+    if args.abort {
+        return abort(&fork);
+    }
+    start(&fork, &args)
+}
+
+/// Fetch the upstream remote so the target is what upstream has now.
+pub(crate) fn fetch(fork: &Fork) -> Result<()> {
+    let remote = &fork.config.upstream.remote;
+    fork.git.ok(&["fetch", "--quiet", remote])?;
+    Ok(())
+}
+
+/// Resolve `rev` to an upstream commit on the tracked branch.
+pub(crate) fn upstream_commit(fork: &Fork, rev: &str) -> Result<String> {
+    let sha = fork
+        .git
+        .commit_sha(rev)?
+        .ok_or_else(|| Error::Refused(format!("not a commit: {rev}")))?;
+    let branch = fork.config.upstream_ref();
+    if !fork.git.is_ancestor(&sha, &branch)? {
+        return Err(Error::Refused(format!("{rev} is not in {branch}")));
+    }
+    Ok(sha)
+}
+
+fn start(fork: &Fork, args: &Args) -> Result<Report> {
+    let git = &fork.git;
+    if !args.no_fetch {
+        fetch(fork)?;
+    }
+    let branch = fork.config.upstream_ref();
+    let target = upstream_commit(fork, args.target.unwrap_or(&branch))?;
+    let base = syncpoint::sync_point(git, "HEAD")?.upstream;
+    if !git.is_ancestor(&base, &target)? {
+        return Err(Error::Refused(format!(
+            "{} does not contain the sync point {}",
+            &target[..12],
+            &base[..12]
+        )));
+    }
+    let range = format!("{base}..{target}");
+    let behind: usize = git
+        .ok(&["rev-list", "--count", &range])?
+        .parse()
+        .unwrap_or(0);
+    if behind == 0 {
+        return Ok(Report::success(
+            "sync",
+            format!("Already synced through {}.", &target[..8]),
+            json!({ "base": base, "target": target, "behind": 0 }),
+        ));
+    }
+
+    if args.dry_run {
+        let preview = preview(fork, &base, &target)?;
+        let summary = format!(
+            "{behind} upstream commit(s) to bring in; {} conflict(s) need a person, {} resolve themselves (owned areas).",
+            preview.0.len(),
+            preview.1.len()
+        );
+        return Ok(Report::success(
+            "sync",
+            summary,
+            json!({
+                "dry_run": true, "base": base, "target": target, "behind": behind,
+                "conflicts": preview.0, "owned_conflicts": preview.1,
+            }),
+        )
+        .with_next("tether sync", "start the sync"));
+    }
+
+    if engine::in_merge(git)? || engine::pending_sync(git)?.is_some() {
+        return Err(Error::Refused(
+            "a merge or sync is already in progress; finish it with `tether sync --continue` or drop it with `tether sync --abort`".into(),
+        ));
+    }
+    if engine::dirty(git)? {
+        return Err(Error::Refused(
+            "the working tree has uncommitted changes; commit or stash them first".into(),
+        ));
+    }
+
+    let merged = engine::squash_merge(git, &base, &target)?;
+    let conflicts = engine::conflicted(git)?;
+    if merged.status > 1 || (merged.status == 1 && conflicts.is_empty()) {
+        return Err(Error::GitFailed {
+            args: "merge --squash".into(),
+            stderr: format!("{}{}", merged.stdout, merged.stderr)
+                .trim()
+                .to_owned(),
+        });
+    }
+    engine::write_squash_msg(
+        git,
+        &engine::sync_message(git, &fork.config, &base, &target)?,
+    )?;
+    let owned = engine::apply_owned(git, &fork.config, &target)?;
+    let remaining = engine::conflicted(git)?;
+
+    let data = json!({
+        "base": base, "target": target, "behind": behind,
+        "conflicts": remaining,
+        "owned_resolved": owned.resolved,
+        "owned_reverted": owned.reverted,
+    });
+    if remaining.is_empty() {
+        return Ok(Report::success(
+            "sync",
+            format!("{behind} upstream commit(s) merged with no conflicts left."),
+            data,
+        )
+        .with_next("tether sync --continue", "record the sync commit")
+        .needs_action());
+    }
+    Ok(Report::success(
+        "sync",
+        format!("{} conflict(s) need a decision.", remaining.len()),
+        data,
+    )
+    .with_next(
+        "tether sync --continue",
+        "after resolving each listed file and `git add`-ing it",
+    )
+    .needs_action())
+}
+
+/// Conflicts a merge would raise, split into (needs a person, owned area),
+/// computed in memory without touching the working tree.
+fn preview(fork: &Fork, base: &str, target: &str) -> Result<(Vec<String>, Vec<String>)> {
+    let merge_base = format!("--merge-base={base}");
+    let out = fork.git.run(&[
+        "merge-tree",
+        "--write-tree",
+        "--name-only",
+        &merge_base,
+        "HEAD",
+        target,
+    ])?;
+    if out.status > 1 {
+        return Err(Error::GitFailed {
+            args: "merge-tree".into(),
+            stderr: out.stderr.trim().to_owned(),
+        });
+    }
+    let mut person = Vec::new();
+    let mut owned = Vec::new();
+    for path in out
+        .stdout
+        .lines()
+        .skip(1)
+        .take_while(|line| !line.is_empty())
+    {
+        let is_owned = fork.config.owned.iter().any(|area| {
+            path.starts_with(&area.path) && !area.except.iter().any(|e| path.starts_with(e))
+        });
+        if is_owned {
+            owned.push(path.to_owned());
+        } else {
+            person.push(path.to_owned());
+        }
+    }
+    Ok((person, owned))
+}
+
+fn finish(fork: &Fork) -> Result<Report> {
+    let git = &fork.git;
+    let Some(target) = engine::pending_sync(git)? else {
+        return Err(Error::Refused("no sync is in progress".into()));
+    };
+    let remaining = engine::conflicted(git)?;
+    if !remaining.is_empty() {
+        return Ok(Report::success(
+            "sync",
+            format!("{} conflict(s) are still unresolved.", remaining.len()),
+            json!({ "conflicts": remaining, "target": target }),
+        )
+        .with_next(
+            "tether sync --continue",
+            "after resolving each listed file and `git add`-ing it",
+        )
+        .needs_action());
+    }
+    let commit = engine::commit_sync(git)?;
+    Ok(Report::success(
+        "sync",
+        format!("Recorded the sync to {}.", &target[..8]),
+        json!({ "commit": commit, "target": target }),
+    )
+    .with_next("tether check", "confirm budgets and reviews before pushing"))
+}
+
+fn abort(fork: &Fork) -> Result<Report> {
+    let git = &fork.git;
+    if engine::pending_sync(git)?.is_none() {
+        return Err(Error::Refused(
+            "no tether sync is in progress; nothing was changed".into(),
+        ));
+    }
+    git.ok(&["reset", "--hard", "--quiet", "HEAD"])?;
+    engine::remove_squash_msg(git)?;
+    Ok(Report::success(
+        "sync",
+        "Dropped the prepared sync; the working tree is back at HEAD.",
+        json!({}),
+    ))
+}

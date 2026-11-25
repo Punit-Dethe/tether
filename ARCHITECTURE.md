@@ -19,6 +19,8 @@ src/syncpoint.rs Upstream-Synced: markers -> the sync point (refuses divergence)
 src/decisions.rs .tether/decisions/<sha>.toml: status, note, port and review
                  records with evidence
 src/inbox.rs     derived list of tracked upstream commits and their state
+src/engine.rs    merge mode: graft + merge --squash, owned-area rules, commit
+src/review.rs    review gate: commits in review areas need evidence
 src/paths.rs     fnmatch-style patterns
 src/time.rs      the one date format tether reads
 tests/support/   throwaway two-repo fixtures with no shared history
@@ -44,6 +46,5 @@ tests/cli.rs     end-to-end tests against the built binary
 
 ## Where things will go
 
-Planned modules (see PLAN.md §6): `engine::{merge,carry}`, `owned`,
-`relocate`, `map`, `budget`, `verify`, `packet`, `session`, and an optional
+Planned modules (see PLAN.md §6): carry mode, `relocate`, `map`, `budget`, `verify`, `packet`, `session`, and an optional
 `semantic` merge driver behind a cargo feature.

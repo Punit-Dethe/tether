@@ -1,10 +1,12 @@
 //! What each command does. Every command returns a [`Report`]; none prints.
 
+mod closeout;
 mod decide;
 mod doctor;
 mod inbox;
 mod init;
 mod status;
+mod sync;
 
 use std::path::{Path, PathBuf};
 
@@ -21,8 +23,27 @@ pub fn run(command: &Command, dir: &Path) -> Report {
         Command::Status => status::run(dir),
         Command::Init { sync_point, remote } => init::run(dir, remote, sync_point.as_deref()),
         Command::Inbox { all } => inbox::run(dir, *all),
-        Command::Sync => not_built("sync", "M1"),
-        Command::Closeout { .. } => not_built("closeout", "M1"),
+        Command::Sync {
+            target,
+            dry_run,
+            continue_,
+            abort,
+            no_fetch,
+        } => sync::run(
+            dir,
+            sync::Args {
+                target: target.as_deref(),
+                dry_run: *dry_run,
+                continue_: *continue_,
+                abort: *abort,
+                no_fetch: *no_fetch,
+            },
+        ),
+        Command::Closeout {
+            rev,
+            execute,
+            no_fetch,
+        } => closeout::run(dir, rev, *execute, *no_fetch),
         Command::Check => not_built("check", "M1"),
         Command::Packet { .. } => not_built("packet", "M2"),
         Command::Decide {

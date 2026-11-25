@@ -46,8 +46,29 @@ pub enum Command {
     },
     /// A self-contained work packet for one upstream item.
     Packet { item: String },
-    /// Run a sync session.
-    Sync,
+    /// Bring upstream in as one squashed sync commit.
+    ///
+    ///   sync [--target <rev>] [--dry-run]   start (owned areas resolve themselves)
+    ///   sync --continue                     commit once conflicts are resolved
+    ///   sync --abort                        drop the prepared sync
+    #[command(verbatim_doc_comment)]
+    Sync {
+        /// Upstream commit to sync to (default: the upstream branch tip).
+        #[arg(long, value_name = "REV")]
+        target: Option<String>,
+        /// Report what would happen, including conflicts, and change nothing.
+        #[arg(long)]
+        dry_run: bool,
+        /// Commit the prepared sync.
+        #[arg(long = "continue", conflicts_with_all = ["target", "dry_run", "abort"])]
+        continue_: bool,
+        /// Throw away the prepared sync and its working-tree changes.
+        #[arg(long, conflicts_with_all = ["target", "dry_run"])]
+        abort: bool,
+        /// Use the already-fetched upstream branch.
+        #[arg(long)]
+        no_fetch: bool,
+    },
     /// Record a decision about one upstream commit (sha prefix or #PR).
     ///
     ///   decide <item> merged|ignored|pending [--note …]
@@ -87,8 +108,17 @@ pub enum Command {
     Map,
     /// The CI gate: budgets, unmarked changes, owned areas, port audit.
     Check,
-    /// Move the sync point over fully decided items without changing a file.
-    Closeout { rev: String },
+    /// Move the sync point over fully decided commits without changing a file.
+    Closeout {
+        /// Upstream commit to move the sync point to.
+        rev: String,
+        /// Record it (default: only check).
+        #[arg(long)]
+        execute: bool,
+        /// Use the already-fetched upstream branch.
+        #[arg(long)]
+        no_fetch: bool,
+    },
     /// Check that git and this repository are usable, in plain words.
     Doctor,
 }
@@ -101,7 +131,7 @@ impl Command {
             Command::Status => "status",
             Command::Inbox { .. } => "inbox",
             Command::Packet { .. } => "packet",
-            Command::Sync => "sync",
+            Command::Sync { .. } => "sync",
             Command::Decide { .. } => "decide",
             Command::Verify => "verify",
             Command::Map => "map",
