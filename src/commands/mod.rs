@@ -9,6 +9,7 @@ mod init;
 mod packet;
 mod status;
 pub(crate) mod sync;
+mod verify;
 
 use std::path::{Path, PathBuf};
 
@@ -31,6 +32,7 @@ pub fn run(command: &Command, dir: &Path) -> Report {
             continue_,
             abort,
             no_fetch,
+            skip_verify,
         } => sync::run(
             dir,
             sync::Args {
@@ -39,6 +41,7 @@ pub fn run(command: &Command, dir: &Path) -> Report {
                 continue_: *continue_,
                 abort: *abort,
                 no_fetch: *no_fetch,
+                skip_verify: *skip_verify,
             },
         ),
         Command::Closeout {
@@ -83,7 +86,20 @@ pub fn run(command: &Command, dir: &Path) -> Report {
                 clear: *clear,
             },
         ),
-        Command::Verify => not_built("verify", "M3"),
+        Command::Verify {
+            baseline,
+            upstream,
+            result,
+            force,
+        } => verify::run(
+            dir,
+            verify::Args {
+                baseline: *baseline,
+                upstream: *upstream,
+                result: *result,
+                force: *force,
+            },
+        ),
         Command::Map => not_built("map", "M4"),
     };
     result.unwrap_or_else(|error| Report::failure(name, &error))

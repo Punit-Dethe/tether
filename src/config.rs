@@ -43,7 +43,62 @@ pub struct Config {
 
     #[serde(default)]
     pub agent: Agent,
+
+    /// Build and test commands `tether verify` runs.
+    #[serde(default, skip_serializing_if = "Verify::is_empty")]
+    pub verify: Verify,
 }
+
+/// How to build and test the fork (`tether verify`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Verify {
+    /// Seconds one step may run before it is stopped and counted as failed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_secs: Option<u64>,
+    /// The shell a step's `run` line goes to (default `sh -c`, or `cmd /C`
+    /// on Windows).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shell: Vec<String>,
+    /// Environment variables for every step.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, String>,
+    #[serde(default, rename = "step", skip_serializing_if = "Vec::is_empty")]
+    pub steps: Vec<Step>,
+}
+
+impl Verify {
+    pub fn is_empty(&self) -> bool {
+        self.steps.is_empty()
+    }
+}
+
+/// One build or test command.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Step {
+    pub name: String,
+    /// The command line, run from the repository root.
+    pub run: String,
+    /// How to read individual failures from the output: `exit` (the step
+    /// passes or fails as a whole), `cargo`, `pytest`, `go` or `tap`.
+    #[serde(default = "default_format")]
+    pub format: String,
+    /// Count every output line starting with this as one failure (instead
+    /// of `format`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prefix: Option<String>,
+    /// The command for upstream's tree, when it differs; `""` skips this
+    /// step on upstream.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upstream: Option<String>,
+}
+
+fn default_format() -> String {
+    "exit".into()
+}
+
+pub const FORMATS: &[&str] = &["exit", "cargo", "pytest", "go", "tap"];
 
 /// How tether works with AI agents.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,7 +108,7 @@ pub struct Agent {
     #[serde(default = "default_packet_bytes")]
     pub packet_bytes: usize,
     /// Actions an agent may not take alone (when `TETHER_ACTOR=agent`).
-    /// Patterns: `accept-growth`, `closeout`, `abort`, `merged`, `ignored`,
+    /// Patterns: `accept-growth`, `skip-verify`, `closeout`, `abort`, `merged`, `ignored`,
     /// `pending`, `note`, `clear`, `port:<outcome>`, `review:<area>`;
     /// `*` matches anything.
     #[serde(default = "default_needs_human")]
@@ -73,7 +128,7 @@ fn default_packet_bytes() -> usize {
     48_000
 }
 fn default_needs_human() -> Vec<String> {
-    vec!["accept-growth".into()]
+    vec!["accept-growth".into(), "skip-verify".into()]
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -207,6 +262,22 @@ impl Config {
             path: format!("{STATE_DIR}/{CONFIG_FILE}"),
             message,
         };
+        let mut names = std::collections::BTreeSet::new();
+        for step in &self.verify.steps {
+            if !names.insert(step.name.as_str()) {
+                return Err(bad(format!(
+                    "[[verify.step]] names must be unique: {}",
+                    step.name
+                )));
+            }
+            if step.prefix.is_none() && !FORMATS.contains(&step.format.as_str()) {
+                return Err(bad(format!(
+                    "[[verify.step]] {}: format must be one of {}",
+                    step.name,
+                    FORMATS.join(", ")
+                )));
+            }
+        }
         for moved in &self.moved {
             if !moved.fork.ends_with('/') || !moved.upstream.ends_with('/') {
                 return Err(bad(format!(

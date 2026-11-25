@@ -20,3 +20,4 @@ pub mod review;
 pub mod session;
 pub mod syncpoint;
 pub mod time;
+pub mod verify;

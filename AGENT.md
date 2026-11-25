@@ -40,6 +40,9 @@ works offline. Without a fetch it reports what you last fetched.
   1 means it failed: read `error.code` and `error.message`.
 - **`needs_human` is final.** That error means this fork's policy reserves
   the action. Stop and ask the person. Do not work around it.
+- **`tether verify` blocks only what the merge broke.** Failures upstream
+  shipped, or that the fork already had, are listed but do not block. Fix
+  every `new` failure. Never pass `--skip-verify`; that is a person's call.
 - **Never edit `.tether/` by hand.** Use `tether decide` and
   `tether check --update`.
 - **Never** run `git merge` of the upstream branch, `git rebase`, or

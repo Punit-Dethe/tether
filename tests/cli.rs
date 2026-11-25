@@ -72,12 +72,10 @@ fn status_outside_a_repository_is_a_coded_error() {
 #[test]
 fn unbuilt_commands_say_which_milestone_brings_them() {
     let fx = Fixture::downloaded_fork();
-    for args in [vec!["verify"], vec!["map"]] {
-        let run = tether(&fx.fork.path, &args);
-        assert_envelope(&run.json, args[0]);
-        assert_eq!(run.code, 1, "{}", run.stdout);
-        assert_eq!(run.json["error"]["code"], "not_implemented");
-    }
+    let run = tether(&fx.fork.path, &["map"]);
+    assert_envelope(&run.json, "map");
+    assert_eq!(run.code, 1, "{}", run.stdout);
+    assert_eq!(run.json["error"]["code"], "not_implemented");
 }
 
 #[test]

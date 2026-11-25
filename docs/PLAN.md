@@ -1,8 +1,9 @@
 # Fork tool — design plan
 
-Status: **M0, M1 and M2 done** (2026-11-26); M1 verified by Grain's
+Status: **M0 to M3 done** (2026-11-26); M1 verified by Grain's
 `Upstream/tether_golden.py` (8/8 identical), M2 by `tests/agent.rs` (a
-scripted agent syncs a fixture by following `next` only). Name: **`tether`** (user-facing name may
+scripted agent syncs a fixture by following `next` only), M3 by
+`tests/verify.rs` (upstream's broken test is told apart from a broken merge). Name: **`tether`** (user-facing name may
 change later). License: **MIT**. Repository: `Punit-Dethe/tether` for now; it
 moves to an organisation account later. No MCP server is planned (§8).
 
@@ -253,7 +254,7 @@ Designed with user approval before building (same rule as Grain's UI).
 | M0 ✅ | Repo, workspace, CI, `ARCHITECTURE.md`, test harness (throwaway two-repo fixtures, as in Grain's `test_squash_sync.py`) | CI green on an empty command set |
 | M1 ✅ | Merge mode at **parity with Grain's Python**: sync point, sync, closeout, inbox/ledger, decisions, budgets, owned areas, port audit | Golden tests: identical results to `Upstream/*.py` on Grain's real history (conflicts, index, ledger, budgets) |
 | M2 ✅ | Agent layer: `status`/`next`, packets, evidence gates, sessions, `AGENT.md` | An agent completes a fixture sync by following `next` only |
-| M3 | `verify` (baseline / upstream / result) | Fixture where upstream is broken is told apart from a broken merge |
+| M3 ✅ | `verify` (baseline / upstream / result) | Fixture where upstream is broken is told apart from a broken merge |
 | M4 | Intent markers + generated map + unmarked-change check | Fixture: an unmarked edit fails `check` |
 | M5 | Release tracking + security category | Fixture with tagged releases and a GHSA reference |
 | M6 | **Grain switches**: config written, CI moved, `Upstream/*.py` deleted, then the 72+ pending Handy commits synced with tether | Grain sync PR produced by tether |

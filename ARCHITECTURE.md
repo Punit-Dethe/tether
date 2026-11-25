@@ -25,11 +25,13 @@ src/budget.rs    divergence budgets, strays, adoption, drift (.tether/budgets.to
 src/ports.rs     port audit: synced fixes to relocated files need records
 src/session.rs   the sync in progress (.git/tether/session.json, never committed)
 src/autonomy.rs  what an agent (TETHER_ACTOR=agent) may do alone
+src/verify.rs    build/test on baseline, upstream and result; only new failures block
 src/paths.rs     fnmatch-style patterns
 src/time.rs      the one date format tether reads
 tests/support/   throwaway two-repo fixtures with no shared history
 tests/cli.rs     end-to-end tests against the built binary
 tests/agent.rs   a scripted agent syncs a fixture by following `next` only
+tests/verify.rs  upstream's broken test is told apart from a broken merge
 ```
 
 ## Rules
@@ -51,5 +53,5 @@ tests/agent.rs   a scripted agent syncs a fixture by following `next` only
 
 ## Where things will go
 
-Planned modules (see PLAN.md §6): carry mode, `map`, `verify`, and an
+Planned modules (see PLAN.md §6): carry mode, `map`, and an
 optional `semantic` merge driver behind a cargo feature.

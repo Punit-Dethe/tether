@@ -4,7 +4,7 @@
 //! the order they are checked:
 //!
 //! 1. `setup`     — no config, or no sync point recorded yet.
-//! 2. `syncing`   — a sync is prepared: resolve conflicts, then continue.
+//! 2. `syncing`   — a sync is prepared: resolve conflicts, verify, continue.
 //! 3. `checks`    — `tether check` fails: record ports/reviews, fix budgets.
 //! 4. `record`    — decisions are written but not committed.
 //! 5. `applied`   — a pending upstream commit was already applied by hand.
@@ -59,10 +59,19 @@ pub fn run(dir: &Path) -> Result<Report> {
             "session": session,
         });
         let (summary, next) = if conflicts.is_empty() {
-            (
-                format!("Sync to {} is ready to commit.", &target[..8]),
-                Next::run("tether sync --continue", "record the sync commit"),
-            )
+            match super::verify::gate(&fork)? {
+                Some(next) => (
+                    format!(
+                        "Sync to {}: conflicts resolved; verify the result.",
+                        &target[..8]
+                    ),
+                    next,
+                ),
+                None => (
+                    format!("Sync to {} is ready to commit.", &target[..8]),
+                    Next::run("tether sync --continue", "record the sync commit"),
+                ),
+            }
         } else {
             (
                 format!(

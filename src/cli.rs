@@ -68,6 +68,9 @@ pub enum Command {
         /// Use the already-fetched upstream branch.
         #[arg(long)]
         no_fetch: bool,
+        /// With --continue: commit without a passing `tether verify`.
+        #[arg(long, requires = "continue_")]
+        skip_verify: bool,
     },
     /// Record a decision about one upstream commit (sha prefix or #PR).
     ///
@@ -102,8 +105,22 @@ pub enum Command {
         #[arg(long, conflicts_with_all = ["outcome", "note", "port", "review"])]
         clear: bool,
     },
-    /// Build and test the fork, upstream as shipped, and the result.
-    Verify,
+    /// Build and test the result; when it fails, also the fork before the
+    /// sync and upstream as shipped, so only failures new in the result block.
+    Verify {
+        /// Only the fork before the sync.
+        #[arg(long, conflicts_with_all = ["upstream", "result"])]
+        baseline: bool,
+        /// Only upstream as shipped (the sync target).
+        #[arg(long, conflicts_with = "result")]
+        upstream: bool,
+        /// Only the working tree.
+        #[arg(long)]
+        result: bool,
+        /// Rerun even when the tree has not changed since the last run.
+        #[arg(long)]
+        force: bool,
+    },
     /// The divergence map, generated from the code.
     Map,
     /// The CI gate: budgets, strays, owned areas, drift, port audit, reviews.
@@ -144,7 +161,7 @@ impl Command {
             Command::Packet { .. } => "packet",
             Command::Sync { .. } => "sync",
             Command::Decide { .. } => "decide",
-            Command::Verify => "verify",
+            Command::Verify { .. } => "verify",
             Command::Map => "map",
             Command::Check { .. } => "check",
             Command::Closeout { .. } => "closeout",

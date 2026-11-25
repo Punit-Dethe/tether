@@ -18,12 +18,13 @@ pub struct Args<'a> {
     pub continue_: bool,
     pub abort: bool,
     pub no_fetch: bool,
+    pub skip_verify: bool,
 }
 
 pub fn run(dir: &Path, args: Args) -> Result<Report> {
     let fork = Fork::open(dir)?;
     if args.continue_ {
-        return finish(&fork);
+        return finish(&fork, args.skip_verify);
     }
     if args.abort {
         return abort(&fork);
@@ -143,12 +144,14 @@ fn start(fork: &Fork, args: &Args) -> Result<Report> {
         "owned_reverted": owned.reverted,
     });
     if remaining.is_empty() {
+        let next = super::verify::gate(fork)?
+            .unwrap_or_else(|| Next::run("tether sync --continue", "record the sync commit"));
         return Ok(Report::success(
             "sync",
             format!("{behind} upstream commit(s) merged with no conflicts left."),
             data,
         )
-        .with_next("tether sync --continue", "record the sync commit")
+        .then(next)
         .needs_action());
     }
     Ok(Report::success(
@@ -219,7 +222,7 @@ fn preview(fork: &Fork, base: &str, target: &str) -> Result<(Vec<String>, Vec<St
     Ok((person, owned))
 }
 
-fn finish(fork: &Fork) -> Result<Report> {
+fn finish(fork: &Fork, skip_verify: bool) -> Result<Report> {
     let git = &fork.git;
     let Some(target) = engine::pending_sync(git)? else {
         return Err(Error::Refused("no sync is in progress".into()));
@@ -240,6 +243,17 @@ fn finish(fork: &Fork) -> Result<Report> {
             "conflict markers are still in {}; finish resolving before committing",
             markers.join(", ")
         )));
+    }
+    if skip_verify {
+        autonomy::require(&fork.config, "skip-verify")?;
+    } else if let Some(next) = super::verify::gate(fork)? {
+        return Ok(Report::success(
+            "sync",
+            "The result must pass `tether verify` before the sync is committed.",
+            json!({ "target": target }),
+        )
+        .then(next)
+        .needs_action());
     }
     let commit = engine::commit_sync(git)?;
     session::clear(git)?;

@@ -108,6 +108,7 @@ fn detect(git: &Git, remote: &str) -> Result<Config> {
         budget: Default::default(),
         port_audit: Default::default(),
         agent: Default::default(),
+        verify: Default::default(),
     })
 }
 
