@@ -121,9 +121,11 @@ fn start(fork: &Fork, args: &Args) -> Result<Report> {
     }
 
     let restored = match &fork.config.sync.rerere_cache {
-        Some(shared) => {
-            engine::copy_resolutions(&fork.root.join(shared), &git.git_path("rr-cache")?)?
-        }
+        Some(shared) => engine::copy_resolutions(
+            &fork.root.join(shared),
+            &git.git_path("rr-cache")?,
+            engine::CacheDirection::Restore,
+        )?,
         None => 0,
     };
     let merged = engine::squash_merge(git, &fork.config.sync.merge_settings(), &base, &target)?;
@@ -159,8 +161,27 @@ fn start(fork: &Fork, args: &Args) -> Result<Report> {
         "conflicts": remaining,
         "owned_resolved": owned.resolved,
         "owned_reverted": owned.reverted,
+        "state_reverted": owned.state_reverted,
         "rerere_restored": restored,
     });
+    if !owned.state_reverted.is_empty() {
+        // Rename detection paired an upstream file with tether's own state:
+        // its upstream change was dropped, and only a person can place it.
+        return Ok(Report::success(
+            "sync",
+            format!(
+                "Upstream edits were routed into tether's own files ({}) and were NOT applied.",
+                owned.state_reverted.join(", ")
+            ),
+            data,
+        )
+        .then(Next::of(
+            NextKind::Edit,
+            "tether sync --continue",
+            "find the upstream file each reverted state file was paired with (`git diff -M` from the base), apply its upstream change to the fork's copy by hand, then continue",
+        ))
+        .needs_action());
+    }
     if remaining.is_empty() {
         let next = super::verify::gate(fork)?
             .unwrap_or_else(|| Next::run("tether sync --continue", "record the sync commit"));
@@ -285,9 +306,11 @@ fn finish(fork: &Fork, skip_verify: bool) -> Result<Report> {
     session::clear(git)?;
     // Share what was resolved, so no clone resolves it again.
     let saved = match &fork.config.sync.rerere_cache {
-        Some(shared) => {
-            engine::copy_resolutions(&git.git_path("rr-cache")?, &fork.root.join(shared))?
-        }
+        Some(shared) => engine::copy_resolutions(
+            &git.git_path("rr-cache")?,
+            &fork.root.join(shared),
+            engine::CacheDirection::Save,
+        )?,
         None => 0,
     };
     let report = Report::success(

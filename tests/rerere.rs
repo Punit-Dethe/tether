@@ -79,8 +79,12 @@ fn a_resolution_is_shared_and_replayed_in_a_fresh_clone() {
     );
     let shared: Vec<_> = fs::read_dir(fork.path.join(".tether/rr-cache"))
         .unwrap()
+        .map(|e| e.unwrap().path())
         .collect();
     assert_eq!(shared.len(), 1);
+    // Stored compressed, so rename detection can never pair it with code.
+    assert!(shared[0].join("preimage.z").is_file());
+    assert!(!shared[0].join("preimage").exists());
 
     // Commit the shared cache, then play a fresh clone: back at the old
     // sync point with only the committed cache, no local rr-cache.
@@ -148,13 +152,21 @@ fn upstream_edits_never_reach_the_shared_cache() {
     upstream.commit("Fix line 30 (#3)");
 
     let sync = tether(&fork.path, &["sync"]);
-    assert!(sync.code == 0 || sync.code == 2, "{}", sync.stdout);
+    assert_eq!(sync.code, 2, "{}", sync.stdout);
     assert_eq!(
         fs::read_to_string(fork.path.join(".tether/rr-cache/abc/preimage")).unwrap(),
         preimage,
         "{}",
         sync.stdout
     );
+    // The dropped upstream change is reported, never silently lost.
+    assert_eq!(
+        sync.json["data"]["state_reverted"],
+        serde_json::json!([".tether/rr-cache/abc/preimage"]),
+        "{}",
+        sync.stdout
+    );
+    assert_eq!(sync.json["next"]["kind"], "edit");
 }
 
 /// A file the fork moved, which upstream then changed: git raises a

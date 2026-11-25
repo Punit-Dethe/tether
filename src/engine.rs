@@ -128,6 +128,10 @@ fn keep_ours(git: &Git, path: &str) -> Result<()> {
 pub struct OwnedResolution {
     /// Conflicts inside an owned area, resolved to the fork's side.
     pub resolved: Vec<String>,
+    /// tether state files the merge tried to change (rename detection paired
+    /// an upstream file with them). Kept as they were; the upstream change
+    /// they carried did NOT land and must be applied by hand.
+    pub state_reverted: Vec<String>,
     /// Upstream changes git routed into owned areas without a conflict
     /// (directory-rename detection), reverted.
     pub reverted: Vec<String>,
@@ -155,7 +159,7 @@ pub fn apply_owned(git: &Git, config: &Config, target: &str) -> Result<OwnedReso
     for dir in config.state_dirs() {
         for path in lines(&git.raw(&["diff", "--name-only", "HEAD", "--", &dir])?) {
             keep_ours(git, &path)?;
-            outcome.reverted.push(path);
+            outcome.state_reverted.push(path);
         }
     }
     // A change counts as adopted when the merge touched the path AND upstream
@@ -240,10 +244,32 @@ pub fn repo_relative(root: &Path, path: &Path) -> String {
         .replace('\\', "/")
 }
 
-/// Copy complete rerere resolutions (entries with a `postimage`) from `from`
-/// to `to`, skipping ones already there. Entries are named by the conflict's
-/// hash, so nothing is ever overwritten. Returns how many were copied.
-pub fn copy_resolutions(from: &std::path::Path, to: &std::path::Path) -> Result<usize> {
+/// Which way [`copy_resolutions`] moves rerere entries.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum CacheDirection {
+    /// From the committed cache into `.git/rr-cache`: entries are inflated.
+    Restore,
+    /// From `.git/rr-cache` into the committed cache: entries are deflated.
+    Save,
+}
+
+/// The committed cache stores each image zlib-compressed (`preimage.z`).
+/// A plain preimage is a near copy of the file it came from, so git's rename
+/// detection would pair an upstream file with the cache entry and merge
+/// upstream's edits into the cache instead of the code. Compressed bytes are
+/// never similar to source text.
+const COMPRESSED: &str = ".z";
+
+/// Copy complete rerere resolutions (entries with a postimage) between git's
+/// cache and the committed one, skipping entries already there. Entries are
+/// named by the conflict's hash, so nothing is ever overwritten. Returns how
+/// many were copied.
+pub fn copy_resolutions(
+    from: &std::path::Path,
+    to: &std::path::Path,
+    direction: CacheDirection,
+) -> Result<usize> {
+    use std::io::{Read, Write};
     let Ok(entries) = std::fs::read_dir(from) else {
         return Ok(0);
     };
@@ -252,14 +278,35 @@ pub fn copy_resolutions(from: &std::path::Path, to: &std::path::Path) -> Result<
         let entry = entry?;
         let source = entry.path();
         let target = to.join(entry.file_name());
-        if !source.join("postimage").is_file() || target.exists() {
+        let complete = source.join("postimage").is_file()
+            || source.join(format!("postimage{COMPRESSED}")).is_file();
+        if !complete || target.exists() {
             continue;
         }
         std::fs::create_dir_all(&target)?;
         for file in std::fs::read_dir(&source)? {
             let file = file?;
-            if file.file_type()?.is_file() {
-                std::fs::copy(file.path(), target.join(file.file_name()))?;
+            if !file.file_type()?.is_file() {
+                continue;
+            }
+            let name = file.file_name().to_string_lossy().into_owned();
+            let bytes = std::fs::read(file.path())?;
+            match (direction, name.strip_suffix(COMPRESSED)) {
+                (CacheDirection::Restore, Some(plain)) => {
+                    let mut out = Vec::new();
+                    flate2::read::ZlibDecoder::new(&bytes[..]).read_to_end(&mut out)?;
+                    std::fs::write(target.join(plain), out)?;
+                }
+                (CacheDirection::Save, None) => {
+                    let mut encoder =
+                        flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::best());
+                    encoder.write_all(&bytes)?;
+                    std::fs::write(
+                        target.join(format!("{name}{COMPRESSED}")),
+                        encoder.finish()?,
+                    )?;
+                }
+                _ => std::fs::write(target.join(&name), bytes)?,
             }
         }
         copied += 1;
