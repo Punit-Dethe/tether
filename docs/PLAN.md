@@ -262,7 +262,7 @@ Designed with user approval before building (same rule as Grain's UI).
 | M3 ✅ | `verify` (baseline / upstream / result) | Fixture where upstream is broken is told apart from a broken merge |
 | M4 ✅ | Intent markers + generated map + unmarked-change check | Fixture: an unmarked edit fails `check` |
 | M5 ✅ | Release tracking + security category | Fixture with tagged releases and a GHSA reference |
-| M6 | **Grain switches**: config written, CI moved, `Upstream/*.py` deleted, then the 72+ pending Handy commits synced with tether | Grain sync PR produced by tether |
+| M6 🟡 | **Grain switches**: config written, CI moved, `Upstream/*.py` deleted, then the 72+ pending Handy commits synced with tether | Grain sync PR produced by tether. Switch ready on Grain's `chore/tether-switch` (unmerged): trial syncs from `main`, a configured clone and a fresh clone give the same 13 conflicts and the same 59 merged files as the Python tooling, and shared resolutions replay byte-identical. The real sync waits for Grain's runbook. |
 | M7 | Carry mode (patch-set forks) with Graftfork's safety rules | Public fixture forks re-applied onto new releases |
 | M8 | Built-in Weave merge driver (`semantic-merge` feature) | Fixture: a function-level conflict git cannot merge is merged; an unsure one is refused |
 | M9 | Dashboard | User visual approval |
