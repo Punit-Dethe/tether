@@ -48,5 +48,6 @@ tests/cli.rs     end-to-end tests against the built binary
 
 ## Where things will go
 
-Planned modules (see PLAN.md §6): carry mode, `relocate`, `map`, `budget`, `verify`, `packet`, `session`, and an optional
+Planned modules (see PLAN.md §6): carry mode, `map`, `verify`, `packet`,
+`session`, and an optional
 `semantic` merge driver behind a cargo feature.
