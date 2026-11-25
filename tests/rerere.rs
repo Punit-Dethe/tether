@@ -169,54 +169,104 @@ fn upstream_edits_never_reach_the_shared_cache() {
     assert_eq!(sync.json["next"]["kind"], "edit");
 }
 
-/// A file the fork moved, which upstream then changed: git raises a
-/// delete/modify conflict with no markers, and the packet must say where the
-/// fork keeps the file instead of asking for marker edits.
-#[test]
-fn a_delete_modify_packet_points_at_the_fork_home() {
+/// Upstream changed a file the fork keeps at a moved home that rename
+/// detection cannot pair: tether merges the change into the home.
+fn moved_fixture(fork_home_body: &str, upstream_fix: &str) -> (Fixture, Repo) {
+    const BASE: &str = "fn tray() {}\n// a\n// b\n// c\n// d\n// e\n";
+    const CONFIG: &str = concat!(
+        "[upstream]\nname = \"Up\"\n\n",
+        "[[moved]]\nfork = \"src/handy/\"\nupstream = \"src/\"\n\n",
+        "[relocations.\"src/tray.rs\"]\nkind = \"relocated\"\nfork = [\"src/grain_tray.rs\"]\n",
+    );
     let fx = Fixture::downloaded_fork();
     let root = fx.upstream.path.parent().unwrap().to_path_buf();
     let upstream = Repo::init(root.join("up-moved"));
-    upstream.write("src/tray.rs", "fn tray() {}\n");
+    upstream.write("src/tray.rs", BASE);
     let base = upstream.commit("upstream: initial");
 
     let fork = Repo::init(root.join("fork-moved"));
-    // Rewritten past rename detection, at the moved home.
-    fork.write(
-        "src/handy/tray.rs",
-        "fn tray() { grain(); }\nfn grain() {}\n// more\n// lines\n",
-    );
+    fork.write("src/handy/tray.rs", fork_home_body);
     fork.commit(&format!("Initial commit\n\nUpstream-Synced: {base}"));
-    let url = upstream.path.to_string_lossy().replace("\\", "/");
+    let url = upstream.path.to_string_lossy().replace('\\', "/");
     fork.git(&["remote", "add", "upstream", &url]);
-    fork.write(
-        ".tether/config.toml",
-        "[upstream]\nname = \"Up\"\n\n[[moved]]\nfork = \"src/handy/\"\nupstream = \"src/\"\n",
-    );
+    fork.write(".tether/config.toml", CONFIG);
     fork.commit("add tether config");
-    upstream.write("src/tray.rs", "fn tray() { fixed(); }\n");
+    upstream.write("src/tray.rs", upstream_fix);
     upstream.commit("Fix the tray (#4)");
+    (fx, fork)
+}
 
+/// Fork-only lines, enough to push the home past rename detection.
+fn grain_lines() -> String {
+    (0..12).map(|n| format!("fn grain_{n}() {{}}\n")).collect()
+}
+
+const UPSTREAM_FIX: &str = "fn tray() { fixed(); }\n// a\n// b\n// c\n// d\n// e\n";
+
+fn read(fork: &Repo, path: &str) -> String {
+    std::fs::read_to_string(fork.path.join(path)).unwrap()
+}
+
+/// Even when the upstream path is listed as relocated, a moved home that
+/// exists takes the change: three-way merged, conflicts marked there.
+#[test]
+fn an_upstream_change_conflicting_at_the_moved_home_is_marked_there() {
+    let home = format!(
+        "fn tray() {{ grain(); }}\n// a\n// b\n// c\n// d\n// e\n{}",
+        grain_lines()
+    );
+    let (_fx, fork) = moved_fixture(&home, UPSTREAM_FIX);
     let sync = tether(&fork.path, &["sync"]);
     assert_eq!(
         sync.json["data"]["conflicts"],
-        serde_json::json!(["src/tray.rs"]),
+        serde_json::json!(["src/handy/tray.rs"]),
         "{}",
         sync.stdout
     );
-    let packet = tether(&fork.path, &["packet", "src/tray.rs"]);
     assert_eq!(
-        packet.json["data"]["conflict"], "deleted-in-fork",
+        sync.json["data"]["moved"],
+        serde_json::json!(["src/tray.rs -> src/handy/tray.rs"])
+    );
+    let merged = read(&fork, "src/handy/tray.rs");
+    assert!(
+        merged.contains("<<<<<<< fork (src/handy/tray.rs)"),
+        "{merged}"
+    );
+    assert!(
+        merged.contains("fixed();") && merged.contains("grain();"),
+        "{merged}"
+    );
+    assert!(!fork.path.join("src/tray.rs").exists());
+    let packet = tether(&fork.path, &["packet", "src/handy/tray.rs"]);
+    assert_eq!(
+        packet.json["data"]["conflict"], "both-changed",
         "{}",
         packet.stdout
     );
-    assert_eq!(packet.json["data"]["fork_home"], "src/handy/tray.rs");
-    assert!(
-        packet.json["data"]["steps"][1]
-            .as_str()
-            .unwrap()
-            .contains("git rm src/tray.rs"),
+}
+
+#[test]
+fn an_upstream_change_merges_cleanly_into_the_moved_home() {
+    let home = format!(
+        "fn tray() {{}}\n// a\n// b\n// c\n// d\n// e\n{}",
+        grain_lines()
+    );
+    let (_fx, fork) = moved_fixture(&home, UPSTREAM_FIX);
+    let sync = tether(&fork.path, &["sync"]);
+    assert_eq!(
+        sync.json["data"]["conflicts"],
+        serde_json::json!([]),
         "{}",
-        packet.stdout
+        sync.stdout
+    );
+    assert_eq!(
+        sync.json["data"]["moved"],
+        serde_json::json!(["src/tray.rs -> src/handy/tray.rs"]),
+        "{}",
+        sync.stdout
+    );
+    assert_eq!(
+        read(&fork, "src/handy/tray.rs"),
+        format!("{UPSTREAM_FIX}{}", grain_lines())
     );
 }

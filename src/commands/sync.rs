@@ -162,6 +162,8 @@ fn start(fork: &Fork, args: &Args) -> Result<Report> {
         "owned_resolved": owned.resolved,
         "owned_reverted": owned.reverted,
         "state_reverted": owned.state_reverted,
+        "moved": owned.moved,
+        "moved_conflicts": owned.moved_conflicts,
         "rerere_restored": restored,
     });
     if !owned.state_reverted.is_empty() {
@@ -259,7 +261,17 @@ fn preview(fork: &Fork, base: &str, target: &str) -> Result<(Vec<String>, Vec<St
                 .git
                 .run(&["cat-file", "-e", &format!("HEAD:{path}")])?
                 .success();
-        let is_owned = fork.config.is_owned(path) || relocated_away;
+        // A file the fork keeps at its moved home is merged into that home,
+        // so it is never auto-resolved away (it may still merge cleanly).
+        let home = fork
+            .config
+            .to_fork_path(&fork.config.to_upstream_path(path));
+        let has_home = home != path
+            && fork
+                .git
+                .run(&["cat-file", "-e", &format!("HEAD:{home}")])?
+                .success();
+        let is_owned = fork.config.is_owned(path) || (relocated_away && !has_home);
         if is_owned {
             owned.push(path.to_owned());
         } else {

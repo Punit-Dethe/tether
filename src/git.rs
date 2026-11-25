@@ -222,6 +222,57 @@ impl Git {
         Ok(out)
     }
 
+    /// Run git and keep raw bytes: (exit status, stdout, stderr). For
+    /// commands whose output is file content, not text.
+    pub fn run_bytes(&self, args: &[&str]) -> Result<(i32, Vec<u8>, Vec<u8>)> {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(&self.dir)
+            .env("LC_ALL", "C")
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .output()
+            .map_err(|error| match error.kind() {
+                std::io::ErrorKind::NotFound => Error::GitMissing,
+                _ => Error::Io(error),
+            })?;
+        Ok((
+            output.status.code().unwrap_or(-1),
+            output.stdout,
+            output.stderr,
+        ))
+    }
+
+    /// Run git with `input` on stdin; a non-zero exit is an error.
+    pub fn ok_with_input(&self, args: &[&str], input: &str) -> Result<String> {
+        use std::io::Write;
+        use std::process::Stdio;
+        let mut child = Command::new("git")
+            .args(args)
+            .current_dir(&self.dir)
+            .env("LC_ALL", "C")
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| match error.kind() {
+                std::io::ErrorKind::NotFound => Error::GitMissing,
+                _ => Error::Io(error),
+            })?;
+        let mut stdin = child.stdin.take().expect("piped stdin");
+        let request = input.to_owned();
+        let writer = std::thread::spawn(move || stdin.write_all(request.as_bytes()));
+        let output = child.wait_with_output()?;
+        writer.join().expect("writer thread")?;
+        if !output.status.success() {
+            return Err(Error::GitFailed {
+                args: args.join(" "),
+                stderr: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+            });
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+    }
+
     /// Absolute path of a file inside the git directory (`SQUASH_MSG`, ...).
     /// Correct in linked worktrees, where `.git` is a file.
     pub fn git_path(&self, name: &str) -> Result<PathBuf> {

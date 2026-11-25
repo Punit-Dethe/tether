@@ -123,11 +123,106 @@ fn keep_ours(git: &Git, path: &str) -> Result<()> {
     Ok(())
 }
 
+/// The fork's moved home for a conflicted path the fork deleted while
+/// upstream changed it, when that home exists in the fork.
+fn moved_home(git: &Git, config: &Config, path: &str) -> Result<Option<String>> {
+    let home = config.to_fork_path(&config.to_upstream_path(path));
+    if home == path || config.is_owned(path) {
+        return Ok(None);
+    }
+    let stages = git.raw(&["ls-files", "--unmerged", "--", path])?;
+    let has = |stage: &str| {
+        stages.lines().any(|line| {
+            line.split('\t')
+                .next()
+                .unwrap_or("")
+                .ends_with(&format!(" {stage}"))
+        })
+    };
+    if !(has("1") && has("3") && !has("2")) {
+        return Ok(None);
+    }
+    let in_head = git
+        .run(&["cat-file", "-e", &format!("HEAD:{home}")])?
+        .success();
+    Ok(in_head.then_some(home))
+}
+
+/// Three-way merge upstream's change to `path` into the fork's `home`, then
+/// drop `path`. Returns whether the merge was clean; when it is not, `home`
+/// is left as a real conflict (markers in the file, stages in the index).
+fn merge_into_home(git: &Git, path: &str, home: &str) -> Result<bool> {
+    let base = git.ok(&["rev-parse", &format!(":1:{path}")])?;
+    let theirs = git.ok(&["rev-parse", &format!(":3:{path}")])?;
+    let ours = git.ok(&["rev-parse", &format!("HEAD:{home}")])?;
+    let mode = git.ok(&["ls-tree", "--format=%(objectmode)", "HEAD", "--", home])?;
+    let mode = if mode.is_empty() {
+        "100644".to_owned()
+    } else {
+        mode
+    };
+    let dir = git.git_path("tether-merge")?;
+    std::fs::create_dir_all(&dir)?;
+    let blobs = git.blobs(&[&ours, &base, &theirs])?;
+    let files: Vec<PathBuf> = ["ours", "base", "theirs"]
+        .iter()
+        .zip(&blobs)
+        .map(|(name, body)| {
+            let file = dir.join(name);
+            std::fs::write(&file, body).map(|_| file)
+        })
+        .collect::<std::io::Result<_>>()?;
+    let names: Vec<String> = files
+        .iter()
+        .map(|f| f.to_string_lossy().into_owned())
+        .collect();
+    let merged = git.run_bytes(&[
+        "merge-file",
+        "-p",
+        "-L",
+        &format!("fork ({home})"),
+        "-L",
+        "base",
+        "-L",
+        &format!("upstream ({path})"),
+        &names[0],
+        &names[1],
+        &names[2],
+    ])?;
+    let _ = std::fs::remove_dir_all(&dir);
+    // merge-file exits with the number of conflicts (capped at 127); a
+    // larger or negative status is an error.
+    if !(0..=127).contains(&merged.0) {
+        return Err(Error::GitFailed {
+            args: format!("merge-file ({home})"),
+            stderr: String::from_utf8_lossy(&merged.2).trim().to_owned(),
+        });
+    }
+    std::fs::write(git.dir().join(home), &merged.1)?;
+    git.ok(&["rm", "--force", "--quiet", "--cached", "--", path])?;
+    let _ = std::fs::remove_file(git.dir().join(path));
+    if merged.0 == 0 {
+        git.ok(&["add", "--", home])?;
+        return Ok(true);
+    }
+    git.ok(&["update-index", "--force-remove", "--", home])?;
+    let entries =
+        format!("{mode} {base} 1\t{home}\n{mode} {ours} 2\t{home}\n{mode} {theirs} 3\t{home}\n");
+    git.ok_with_input(&["update-index", "--index-info"], &entries)?;
+    Ok(false)
+}
+
 /// What the owned-area rules did to a fresh merge.
 #[derive(Debug, Default, serde::Serialize)]
 pub struct OwnedResolution {
     /// Conflicts inside an owned area, resolved to the fork's side.
     pub resolved: Vec<String>,
+    /// Upstream changes to a file the fork keeps at its moved home
+    /// (`path -> home`), three-way merged into that home. Rename detection
+    /// misses these when the home has drifted too far from upstream.
+    pub moved: Vec<String>,
+    /// Moved homes the three-way merge left with conflict markers.
+    pub moved_conflicts: Vec<String>,
     /// tether state files the merge tried to change (rename detection paired
     /// an upstream file with them). Kept as they were; the upstream change
     /// they carried did NOT land and must be applied by hand.
@@ -141,6 +236,14 @@ pub struct OwnedResolution {
 pub fn apply_owned(git: &Git, config: &Config, target: &str) -> Result<OwnedResolution> {
     let mut outcome = OwnedResolution::default();
     for path in conflicted(git)? {
+        if let Some(home) = moved_home(git, config, &path)? {
+            let clean = merge_into_home(git, &path, &home)?;
+            outcome.moved.push(format!("{path} -> {home}"));
+            if !clean {
+                outcome.moved_conflicts.push(home);
+            }
+            continue;
+        }
         // A relocated upstream file the fork deleted: its fixes reach the
         // fork by porting, which the port audit enforces, never by merge.
         let relocated_away = config
