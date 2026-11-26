@@ -186,6 +186,20 @@ pub enum Command {
         #[arg(long)]
         no_fetch: bool,
     },
+    /// Libraries taken from git instead of a registry: which forks are yours,
+    /// which your upstream maintains, and what changed in the projects they
+    /// came from.
+    ///
+    ///   deps                 every git dependency, with notable upstream changes
+    ///   deps <name>          one library, with every upstream change
+    #[command(verbatim_doc_comment)]
+    Deps {
+        /// A repository or package name.
+        name: Option<String>,
+        /// Use what was fetched last time.
+        #[arg(long)]
+        no_fetch: bool,
+    },
     /// Check that git and this repository are usable, in plain words.
     Doctor,
     /// Open a local, read-only dashboard of this fork in the browser.
@@ -223,6 +237,7 @@ impl Command {
             Command::Map { .. } => "map",
             Command::Check { .. } => "check",
             Command::Closeout { .. } => "closeout",
+            Command::Deps { .. } => "deps",
             Command::Doctor => "doctor",
             Command::Ui { .. } => "ui",
             Command::Mcp { .. } => "mcp",

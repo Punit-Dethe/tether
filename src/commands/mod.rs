@@ -3,6 +3,7 @@
 mod check;
 mod closeout;
 mod decide;
+mod deps;
 mod doctor;
 mod folder;
 mod inbox;
@@ -26,6 +27,7 @@ pub fn run(command: &Command, dir: &Path) -> Report {
     let name = command.name();
     let result = match command {
         Command::Doctor => doctor::run(dir),
+        Command::Deps { name, no_fetch } => deps::run(dir, name.as_deref(), *no_fetch),
         Command::Ui { port, no_open } => crate::ui::serve(dir, *port, !*no_open)
             .map(|()| Report::success(name, "tether ui stopped.", serde_json::Value::Null))
             .map_err(Into::into),

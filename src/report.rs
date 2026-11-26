@@ -151,6 +151,11 @@ impl Report {
             return text;
         }
         let mut text = format!("{}\n", self.summary);
+        if let Some(detail) = &self.detail {
+            text.push('\n');
+            text.push_str(detail.trim_end());
+            text.push_str("\n\n");
+        }
         if let Some(next) = &self.next {
             text.push_str(&format!("next: {}  ({})\n", next.command, next.why));
             if let Some(packet) = &next.packet {

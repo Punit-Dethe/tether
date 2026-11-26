@@ -168,6 +168,18 @@ const TOOLS: &[Tool] = &[
         writes: false,
     },
     Tool {
+        name: "deps",
+        description: "Libraries the project takes from git instead of a registry, grouped as yours, maintained by your upstream, or someone else's. For your own forks: how far behind the project they came from, upstream security fixes, upstream changes to files your fork changed, and whether a merge would conflict. Read-only (fetches into a cache in .git).",
+        properties: || {
+            json!({
+                "name": { "type": "string", "description": "One library (repository or package name): every upstream change, not just notable ones." },
+                "no_fetch": { "type": "boolean", "description": "Use what was fetched last time." }
+            })
+        },
+        required: &[],
+        writes: false,
+    },
+    Tool {
         name: "folder",
         description: "List folders, or group upstream commits into folders (a reading aid in .tether/folders.toml; it never changes a commit's state). With no arguments it lists them.",
         properties: || {
@@ -404,6 +416,10 @@ fn command(name: &str, args: &Args) -> Result<Command, String> {
             since: args.rev("since")?,
         },
         "doctor" => Command::Doctor,
+        "deps" => Command::Deps {
+            name: args.text("name")?,
+            no_fetch: args.flag("no_fetch")?,
+        },
         "folder" => {
             let name = args.text("name")?;
             let (items, unfile) = (args.items("items")?, args.items("unfile")?);

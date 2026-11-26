@@ -59,6 +59,41 @@ pub struct Config {
     /// Build and test commands `tether verify` runs.
     #[serde(default, skip_serializing_if = "Verify::is_empty")]
     pub verify: Verify,
+
+    /// Libraries the fork takes from git rather than a registry (`tether deps`).
+    #[serde(default, skip_serializing_if = "Deps::is_empty")]
+    pub deps: Deps,
+}
+
+/// Forked libraries (`tether deps`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Deps {
+    /// Owners (GitHub users or organisations) whose forks you maintain
+    /// (default: the owner of the `origin` remote).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ours: Vec<String>,
+    /// The project each of your forks came from, when the host cannot tell.
+    #[serde(default, rename = "fork", skip_serializing_if = "Vec::is_empty")]
+    pub forks: Vec<DepFork>,
+}
+
+impl Deps {
+    pub fn is_empty(&self) -> bool {
+        self.ours.is_empty() && self.forks.is_empty()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DepFork {
+    /// The fork, as the manifest names it.
+    pub url: String,
+    /// The project it was forked from.
+    pub upstream: String,
+    /// Upstream's branch to compare with (default: its default branch).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
 }
 
 /// How to build and test the fork (`tether verify`).

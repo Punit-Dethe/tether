@@ -9,6 +9,7 @@ pub mod cli;
 pub mod commands;
 pub mod config;
 pub mod decisions;
+pub mod deps;
 pub mod engine;
 pub mod error;
 pub mod folders;
