@@ -208,6 +208,12 @@ Python tooling it replaced: 299 tracked commits, a 72-commit sync with 13
 conflicts, 42 size budgets, the port audit and the review gate. The roadmap is
 in [docs/PLAN.md](docs/PLAN.md).
 
+**Planned: several upstreams in one repository.** Today tether tracks one
+upstream per repository. Some products are built from more than one project,
+for example an app forked from one project with a library forked from another
+vendored inside it. Support for that is planned: each upstream would get its
+own sync point, inbox, plan and decisions, all from the same repository.
+
 ## Licence
 
 MIT. See [LICENSE](LICENSE).
