@@ -72,20 +72,29 @@ changes, owned areas, drift, ports and reviews.
 
 ## How it compares
 
-Most fork tools make your copy match upstream again. tether is for the fork
-that has become its own product, where you choose what to take and keep your
-own changes and history. Here it is next to the strongest alternatives:
-GitHub's built-in Sync fork button, Google's
-[Copybara](https://github.com/google/copybara), and the OpenHands
-[upstream fork sync](https://www.skills.sh/openhands/extensions/upstream-fork-sync)
-agent skill.
+The right tool depends on the fork you have. The table groups what people need
+by situation, and compares tether with what people in each situation use
+today: plain git, GitHub's Sync fork,
+[Copybara](https://github.com/google/copybara), and AI agents that rebase on a
+schedule, such as OpenHands'
+[upstream fork sync](https://www.skills.sh/openhands/extensions/upstream-fork-sync).
 
-![tether compared with GitHub Sync fork, Copybara and OpenHands fork sync](docs/screenshots/compare.png)
+![tether compared with plain git, GitHub Sync fork, Copybara and AI agent sync, grouped by situation](docs/screenshots/compare.png)
 
-Copybara is the better choice when you mostly need to move and rewrite code
-between repositories. A scheduled agent rebase suits a fork that stays close to
-upstream and shares its history. Spotted something wrong? Open an issue. The
-table's source is [docs/compare/compare.html](docs/compare/compare.html).
+In short:
+
+- **A few small patches, or a mirror:** use git or GitHub's button. They're
+  quicker, and tether would be more setup than you need.
+- **Moving or rewriting code between repositories:** use Copybara.
+- **A fork near upstream that should sync itself:** a scheduled agent rebase
+  fits well.
+- **A product built from upstream, kept for years:** this is tether's case.
+  Use it when the fork started from a copy, moved or rewrote upstream's files,
+  must never silently lose an upstream fix, or is kept up by an agent with a
+  person making the key calls.
+
+Spotted something wrong? Open an issue. The table's source is
+[docs/compare/compare.html](docs/compare/compare.html).
 
 ## Try it
 
