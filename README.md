@@ -40,6 +40,8 @@ always says what to do next.
   what is waiting, the sync plan, releases, and where your fork differs, with
   drag-and-drop folders. It listens on this machine only and changes nothing
   else.
+- **An MCP server.** `tether mcp` offers the same commands as tools to agents
+  that speak the Model Context Protocol (see below).
 
 ## Try it
 
@@ -68,6 +70,27 @@ tether status --json
 Exit codes: `0` done, `1` failed (see `error.code`), `2` worked but something
 needs action (see `next`). Agents should branch on `error.code`, never on
 message text.
+
+## For agents without a shell: MCP
+
+Agents that can run commands just run `tether … --json`. For the rest, add
+tether as an MCP server; the agent's app starts `tether mcp` in the fork when
+a session opens and stops it when the session ends. With Claude Code:
+
+```sh
+claude mcp add tether -- tether mcp            # read-only
+claude mcp add tether -- tether mcp --allow-writes
+```
+
+Other apps take the same command in their MCP settings (`"command": "tether",
+"args": ["mcp"]`, run in the fork, or add `-C <fork>`).
+
+Each tool answers with the command's JSON report above. Read-only tools are
+always on: `status`, `inbox`, `plan`, `packet`, `sync_preview`, `map`,
+`check`, `doctor`, and `folder` (folders are only a reading aid). `decide`,
+`sync`, `verify` and `closeout` appear only with `--allow-writes`, which only a
+person can pass. Whoever calls the tools counts as an agent, so the fork's
+`[agent] needs_human` policy applies to every call.
 
 ## Licence
 

@@ -29,6 +29,10 @@ pub fn run(command: &Command, dir: &Path) -> Report {
         Command::Ui { port, no_open } => crate::ui::serve(dir, *port, !*no_open)
             .map(|()| Report::success(name, "tether ui stopped.", serde_json::Value::Null))
             .map_err(Into::into),
+        // Over MCP a tool cannot start another server.
+        Command::Mcp { .. } => Err(crate::error::Error::Refused(
+            "`tether mcp` is started by an agent's app, not run as a command".into(),
+        )),
         Command::Status => status::run(dir),
         Command::Plan => plan::run(dir),
         Command::Folder {

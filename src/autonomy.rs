@@ -8,10 +8,22 @@
 use crate::config::Config;
 use crate::error::{Error, Result};
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 pub const ACTOR_ENV: &str = "TETHER_ACTOR";
 
+/// Set for the life of the process by `tether mcp`: whoever calls its tools
+/// is an agent, whatever the environment says.
+static AGENT: AtomicBool = AtomicBool::new(false);
+
+/// Treat every command this process runs as an agent's.
+pub fn act_as_agent() {
+    AGENT.store(true, Ordering::Relaxed);
+}
+
 pub fn is_agent() -> bool {
-    std::env::var(ACTOR_ENV).is_ok_and(|actor| actor.eq_ignore_ascii_case("agent"))
+    AGENT.load(Ordering::Relaxed)
+        || std::env::var(ACTOR_ENV).is_ok_and(|actor| actor.eq_ignore_ascii_case("agent"))
 }
 
 /// Refuse `action` when an agent runs it and policy reserves it for a person.

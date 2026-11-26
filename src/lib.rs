@@ -15,6 +15,7 @@ pub mod folders;
 pub mod git;
 pub mod inbox;
 pub mod map;
+pub mod mcp;
 pub mod paths;
 pub mod ports;
 pub mod report;

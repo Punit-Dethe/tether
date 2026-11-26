@@ -163,7 +163,7 @@ pub fn handle(dir: &Path, request: &Request, port: u16) -> Response {
 }
 
 /// A sha prefix (4–40 hex digits) or a PR number, optionally `#`-prefixed.
-fn is_item(item: &str) -> bool {
+pub(crate) fn is_item(item: &str) -> bool {
     let pr = item.strip_prefix('#').unwrap_or(item);
     let hex = (4..=40).contains(&item.len()) && item.bytes().all(|b| b.is_ascii_hexdigit());
     hex || (!pr.is_empty() && pr.len() <= 9 && pr.bytes().all(|b| b.is_ascii_digit()))

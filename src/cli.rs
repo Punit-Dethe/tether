@@ -197,6 +197,14 @@ pub enum Command {
         #[arg(long)]
         no_open: bool,
     },
+    /// Serve tether's commands as MCP tools over stdin/stdout, for an
+    /// agent's app to start. Read-only unless --allow-writes.
+    Mcp {
+        /// Also offer the tools that change the fork: decide, sync, verify,
+        /// closeout. `[agent] needs_human` still applies.
+        #[arg(long)]
+        allow_writes: bool,
+    },
 }
 
 impl Command {
@@ -217,6 +225,7 @@ impl Command {
             Command::Closeout { .. } => "closeout",
             Command::Doctor => "doctor",
             Command::Ui { .. } => "ui",
+            Command::Mcp { .. } => "mcp",
         }
     }
 }
