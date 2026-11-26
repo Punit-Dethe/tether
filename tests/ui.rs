@@ -106,6 +106,74 @@ fn only_local_gets_are_served() {
     assert_eq!(at("GET", "/", Some("localhost:7311")), 200);
 }
 
+/// One raw HTTP exchange with a running server.
+fn exchange(port: u16, request: &str) -> String {
+    use std::io::{Read, Write};
+    let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(30)))
+        .unwrap();
+    stream.write_all(request.as_bytes()).unwrap();
+    let mut response = String::new();
+    stream.read_to_string(&mut response).unwrap();
+    response
+}
+
+#[test]
+fn the_server_starts_answers_and_stops() {
+    use std::io::{BufRead, BufReader};
+    use std::process::{Command, Stdio};
+    let fx = synced_fork();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_tether"))
+        .args(["ui", "--no-open"])
+        .current_dir(&fx.fork.path)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    BufReader::new(child.stdout.take().unwrap())
+        .read_line(&mut line)
+        .unwrap();
+    let port: u16 = line
+        .split("http://127.0.0.1:")
+        .nth(1)
+        .and_then(|rest| rest.split('/').next())
+        .and_then(|p| p.parse().ok())
+        .unwrap_or_else(|| panic!("no address in {line:?}"));
+
+    let ok = exchange(
+        port,
+        &format!("GET /api/status HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n"),
+    );
+    assert!(ok.starts_with("HTTP/1.1 200"), "{ok}");
+    assert!(ok.contains("Content-Security-Policy"), "{ok}");
+    let body = ok.split("\r\n\r\n").nth(1).unwrap();
+    let status: Value = serde_json::from_str(body).unwrap();
+    assert_eq!(status["command"], "status");
+
+    let rebind = exchange(
+        port,
+        "GET /api/status HTTP/1.1\r\nHost: evil.example\r\n\r\n",
+    );
+    assert!(rebind.starts_with("HTTP/1.1 403"), "{rebind}");
+    // An oversized body is dropped without an answer.
+    let huge = exchange(
+        port,
+        &format!(
+            "POST /api/folder HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Length: 999999\r\n\r\n"
+        ),
+    );
+    assert!(huge.is_empty(), "{huge}");
+
+    child.kill().unwrap();
+    child.wait().unwrap();
+    assert!(
+        std::net::TcpStream::connect(("127.0.0.1", port)).is_err(),
+        "the port is released once tether ui stops"
+    );
+}
+
 #[test]
 fn the_page_can_file_commits_into_folders() {
     let fx = synced_fork();

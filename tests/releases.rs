@@ -165,6 +165,39 @@ fn an_unreleased_security_fix_is_a_persons_call() {
 }
 
 #[test]
+fn branch_mode_still_labels_each_commit_with_its_release() {
+    let fx = Fixture::downloaded_fork();
+    let first = fx.upstream.git(&["rev-parse", "HEAD"]);
+    fx.upstream.write("a.txt", "a\n");
+    let shipped = fx.upstream.commit("Ship a (#1)");
+    fx.upstream.git(&["tag", "-a", "v1.0.0", "-m", "1.0.0"]);
+    fx.upstream.write("b.txt", "b\n");
+    let later = fx.upstream.commit("Add b (#2)");
+    fx.fork.git(&["tag", "v1.0.0"]);
+    let fork_tag = fx.fork.git(&["rev-parse", "v1.0.0"]);
+    let init = tether(&fx.fork.path, &["init", "--sync-point", &first]);
+    assert_eq!(init.code, 0, "{}", init.stdout);
+    let dry = tether(&fx.fork.path, &["sync", "--dry-run"]);
+    assert!(dry.code != 1, "{}", dry.stdout);
+
+    let inbox = tether(&fx.fork.path, &["inbox", "--all"]);
+    assert_eq!(inbox.code, 0, "{}", inbox.stdout);
+    // Branch mode: the target is the tip, not a release…
+    assert!(inbox.json["data"]["release"].is_null(), "{}", inbox.stdout);
+    assert_eq!(inbox.json["data"]["target"], later.as_str());
+    assert_eq!(inbox.json["data"]["unreleased"], 0);
+    // …but each commit still says which release first shipped it.
+    assert_eq!(item(&inbox.json, &shipped)["release"], "v1.0.0");
+    assert!(
+        item(&inbox.json, &later)
+            .get("release")
+            .is_none_or(Value::is_null)
+    );
+    assert_eq!(item(&inbox.json, &later)["state"], "pending");
+    assert_eq!(fx.fork.git(&["rev-parse", "v1.0.0"]), fork_tag);
+}
+
+#[test]
 fn prereleases_count_when_allowed() {
     let w = world("prereleases = true\n");
     let inbox = tether(&w.fork.path, &["inbox"]);

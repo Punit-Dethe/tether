@@ -43,15 +43,25 @@ impl Git {
         &self.dir
     }
 
-    /// Run git and capture its output, whatever the exit status.
-    pub fn run(&self, args: &[&str]) -> Result<Output> {
-        let output = Command::new("git")
+    /// A git command in this repository with stable, parseable output.
+    fn command(&self, args: &[&str]) -> Command {
+        let mut command = Command::new("git");
+        command
+            // Paths as written (`naïve.rs`), not C-quoted (`"na\303\257ve.rs"`).
+            .args(["-c", "core.quotepath=false"])
             .args(args)
             .current_dir(&self.dir)
-            // Stable, parseable output regardless of the user's locale, and
-            // never block on a credential prompt: an agent cannot answer it.
+            // The same output whatever the user's locale, and never block on
+            // a credential prompt: an agent cannot answer it.
             .env("LC_ALL", "C")
-            .env("GIT_TERMINAL_PROMPT", "0")
+            .env("GIT_TERMINAL_PROMPT", "0");
+        command
+    }
+
+    /// Run git and capture its output, whatever the exit status.
+    pub fn run(&self, args: &[&str]) -> Result<Output> {
+        let output = self
+            .command(args)
             .output()
             .map_err(|error| match error.kind() {
                 std::io::ErrorKind::NotFound => Error::GitMissing,
@@ -184,9 +194,8 @@ impl Git {
         if ids.is_empty() {
             return Ok(Vec::new());
         }
-        let mut child = Command::new("git")
-            .args(["cat-file", "--batch"])
-            .current_dir(&self.dir)
+        let mut child = self
+            .command(&["cat-file", "--batch"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -225,11 +234,8 @@ impl Git {
     /// Run git and keep raw bytes: (exit status, stdout, stderr). For
     /// commands whose output is file content, not text.
     pub fn run_bytes(&self, args: &[&str]) -> Result<(i32, Vec<u8>, Vec<u8>)> {
-        let output = Command::new("git")
-            .args(args)
-            .current_dir(&self.dir)
-            .env("LC_ALL", "C")
-            .env("GIT_TERMINAL_PROMPT", "0")
+        let output = self
+            .command(args)
             .output()
             .map_err(|error| match error.kind() {
                 std::io::ErrorKind::NotFound => Error::GitMissing,
@@ -246,11 +252,8 @@ impl Git {
     pub fn ok_with_input(&self, args: &[&str], input: &str) -> Result<String> {
         use std::io::Write;
         use std::process::Stdio;
-        let mut child = Command::new("git")
-            .args(args)
-            .current_dir(&self.dir)
-            .env("LC_ALL", "C")
-            .env("GIT_TERMINAL_PROMPT", "0")
+        let mut child = self
+            .command(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
