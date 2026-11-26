@@ -83,6 +83,17 @@ pub fn handle(dir: &Path, request: &Request, port: u16) -> Response {
     }
     let target = request.target;
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
+    // Every call may name an extra upstream; this request's thread works on it.
+    let upstream = query_param(query, "upstream").filter(|u| !u.is_empty());
+    match crate::config::with_upstream(upstream.as_deref(), || {
+        route(dir, request, path, query, &allowed)
+    }) {
+        Ok(response) => response,
+        Err(error) => Response::error(400, &error.to_string()),
+    }
+}
+
+fn route(dir: &Path, request: &Request, path: &str, query: &str, allowed: &[String]) -> Response {
     if request.method == "POST" && path == "/api/folder" {
         let same_origin = request.origin.is_none_or(|origin| {
             allowed
@@ -132,7 +143,25 @@ pub fn handle(dir: &Path, request: &Request, port: u16) -> Response {
                 .toplevel()
                 .unwrap_or_else(|_| dir.to_path_buf());
             let name = root.file_name().map(|n| n.to_string_lossy().into_owned());
-            return Response::json(200, serde_json::json!({ "name": name }).to_string());
+            return Response::json(
+                200,
+                serde_json::json!({ "name": name, "upstreams": upstreams(&root) }).to_string(),
+            );
+        }
+        "/api/deps" => {
+            let name = query_param(query, "name");
+            if name.as_deref().is_some_and(|n| {
+                n.len() > 100
+                    || !n
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b"._-/".contains(&b))
+            }) {
+                return Response::error(400, "not a library name");
+            }
+            Command::Deps {
+                name,
+                no_fetch: query_param(query, "fetch").as_deref() != Some("1"),
+            }
         }
         "/api/status" => Command::Status,
         "/api/plan" => Command::Plan,
@@ -160,6 +189,26 @@ pub fn handle(dir: &Path, request: &Request, port: u16) -> Response {
         _ => return Response::error(404, "not found"),
     };
     Response::json(200, commands::run(&command, dir).render(true))
+}
+
+/// The main upstream and every extra one, for the dashboard's switcher.
+/// `id` is what `?upstream=` takes (`null` for the main one).
+fn upstreams(root: &Path) -> Vec<serde_json::Value> {
+    use crate::config::{Config, with_upstream};
+    let describe = |id: Option<&str>| {
+        let config = with_upstream(id, || Config::load(root)).ok()?.ok()?;
+        Some(serde_json::json!({
+            "id": id,
+            "name": config.upstream.name.as_deref().or(id).unwrap_or("upstream"),
+            "remote": config.upstream.remote,
+            "prefix": config.upstream.prefix,
+        }))
+    };
+    let extras = crate::config::extra_upstreams(root);
+    std::iter::once(None)
+        .chain(extras.iter().map(|n| Some(n.as_str())))
+        .filter_map(describe)
+        .collect()
 }
 
 /// A sha prefix (4–40 hex digits) or a PR number, optionally `#`-prefixed.

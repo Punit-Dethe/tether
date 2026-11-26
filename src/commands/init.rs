@@ -47,6 +47,8 @@ pub fn run(
             config.upstream.prefix = Some(prefix);
         }
         if let Some(name) = &extra {
+            // Name it after its id when the remote gives no project name.
+            config.upstream.name.get_or_insert_with(|| name.clone());
             // Each upstream needs its own remote.
             if Config::load_main(&root)?.upstream.remote == remote {
                 return Err(Error::Refused(format!(

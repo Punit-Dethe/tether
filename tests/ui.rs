@@ -221,3 +221,66 @@ fn the_page_can_file_commits_into_folders() {
     assert!(inbox["data"]["items"][0].get("folder").is_none());
     assert!(!fx.fork.path.join(".tether/folders.toml").exists());
 }
+
+#[test]
+fn each_request_can_name_an_extra_upstream() {
+    let fx = synced_fork();
+    fx.fork.commit("add tether");
+    let lib = support::Repo::init(fx.fork.path.parent().unwrap().join("lib"));
+    lib.write("a.rs", "a\n");
+    let first = lib.commit("lib: first");
+    lib.write("b.rs", "b\n");
+    lib.commit("lib: second");
+    let url = lib.path.to_string_lossy().replace('\\', "/");
+    fx.fork.git(&["remote", "add", "lib", &url]);
+    fx.fork.git(&["fetch", "-q", "lib"]);
+    let init = tether(
+        &fx.fork.path,
+        &[
+            "-u",
+            "lib",
+            "init",
+            "--remote",
+            "lib",
+            "--prefix",
+            "vendor/lib/",
+            "--sync-point",
+            &first,
+        ],
+    );
+    assert_eq!(init.code, 0, "{}", init.stdout);
+    fx.fork.commit("track lib");
+
+    let info = json(&fx.fork.path, "/api/info");
+    let ups = info["upstreams"].as_array().unwrap();
+    assert_eq!(ups.len(), 2, "{info}");
+    assert_eq!(ups[0]["id"], Value::Null);
+    assert_eq!(ups[1]["id"], "lib");
+    assert_eq!(ups[1]["name"], "lib");
+    assert_eq!(ups[1]["prefix"], "vendor/lib/");
+
+    // The main upstream is 1 behind; lib is 1 behind on its own sync point.
+    let main = json(&fx.fork.path, "/api/status");
+    assert_eq!(main["data"]["upstreams"][0]["behind"], 1, "{main}");
+    let extra = json(&fx.fork.path, "/api/status?upstream=lib");
+    assert_eq!(
+        extra["data"]["sync_point"]["upstream"],
+        first.as_str(),
+        "{extra}"
+    );
+    assert_eq!(extra["next"]["command"], "tether -u lib sync");
+
+    assert_eq!(
+        get(&fx.fork.path, "/api/status?upstream=Not%20ok", HOST).status,
+        400
+    );
+}
+
+#[test]
+fn libraries_are_served_and_names_are_checked() {
+    let fx = synced_fork();
+    let deps = json(&fx.fork.path, "/api/deps");
+    assert_eq!(deps["command"], "deps", "{deps}");
+    assert!(deps["ok"].as_bool().unwrap());
+    assert_eq!(get(&fx.fork.path, "/api/deps?name=a%20b", HOST).status, 400);
+}

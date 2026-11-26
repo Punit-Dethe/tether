@@ -261,7 +261,8 @@ conflicts, 42 size budgets, the port audit and the review gate. The roadmap is
 in [docs/PLAN.md](docs/PLAN.md).
 
 New and less proven: `tether deps` and several upstreams in one repository.
-The dashboard shows the main upstream only for now.
+In the dashboard, Libraries shows `tether deps`, and a repository with more
+than one upstream gets a switcher in the sidebar.
 
 ## Licence
 

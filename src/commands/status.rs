@@ -41,10 +41,8 @@ pub fn run(dir: &Path) -> Result<Report> {
     let mut upstreams = Vec::new();
     let mut lines = Vec::new();
     for name in &extras {
-        crate::config::select_upstream(Some(name))?;
-        let theirs = run_one(dir);
-        crate::config::select_upstream(None)?;
-        let theirs = theirs.unwrap_or_else(|error| Report::failure("status", &error));
+        let theirs = crate::config::with_upstream(Some(name), || run_one(dir))?
+            .unwrap_or_else(|error| Report::failure("status", &error));
         let next = theirs.next.clone().map(|mut next| {
             if let Some(rest) = next.command.strip_prefix("tether ") {
                 next.command = format!("tether -u {name} {rest}");
@@ -64,6 +62,7 @@ pub fn run(dir: &Path) -> Result<Report> {
             "ok": theirs.ok,
             "summary": theirs.summary,
             "phase": theirs.data.get("phase"),
+            "behind": theirs.data.get("behind"),
             "next": next,
         }));
     }

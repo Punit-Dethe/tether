@@ -16,12 +16,35 @@ pub const CONFIG_FILE: &str = "config.toml";
 /// Where each extra upstream keeps its own config, decisions and budgets.
 pub const UPSTREAMS_DIR: &str = "upstreams";
 
-/// The extra upstream this process works on (`--upstream <name>`); `None`
-/// is the main one. Set once at start, or per call by the MCP server.
+/// The extra upstream this process works on (`-u <name>`); `None` is the
+/// main one. Set once at start.
 static SELECTED: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
 
-/// Work on the extra upstream `name` (or the main one, for `None`).
+thread_local! {
+    /// A per-thread choice that wins over [`SELECTED`]: the dashboard serves
+    /// requests for different upstreams on different threads at once.
+    static ON_THREAD: std::cell::RefCell<Option<Option<String>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Work on the extra upstream `name` (or the main one, for `None`) for the
+/// rest of the process.
 pub fn select_upstream(name: Option<&str>) -> Result<()> {
+    check_upstream_name(name)?;
+    *SELECTED.write().expect("upstream selection lock") = name.map(str::to_owned);
+    Ok(())
+}
+
+/// Run `f` on upstream `name` on this thread only, then restore the choice.
+pub fn with_upstream<T>(name: Option<&str>, f: impl FnOnce() -> T) -> Result<T> {
+    check_upstream_name(name)?;
+    let before = ON_THREAD.with(|on| on.replace(Some(name.map(str::to_owned))));
+    let out = f();
+    ON_THREAD.with(|on| *on.borrow_mut() = before);
+    Ok(out)
+}
+
+fn check_upstream_name(name: Option<&str>) -> Result<()> {
     if let Some(name) = name {
         let valid = !name.is_empty()
             && name.len() <= 40
@@ -34,13 +57,14 @@ pub fn select_upstream(name: Option<&str>) -> Result<()> {
             )));
         }
     }
-    *SELECTED.write().expect("upstream selection lock") = name.map(str::to_owned);
     Ok(())
 }
 
 /// The extra upstream selected, if any.
 pub fn selected_upstream() -> Option<String> {
-    SELECTED.read().expect("upstream selection lock").clone()
+    ON_THREAD
+        .with(|on| on.borrow().clone())
+        .unwrap_or_else(|| SELECTED.read().expect("upstream selection lock").clone())
 }
 
 /// The selected upstream's state directory, relative to the repository:
@@ -517,11 +541,7 @@ impl Config {
 
     /// The main upstream's config, whichever upstream is selected.
     pub fn load_main(root: &Path) -> Result<Config> {
-        let selected = selected_upstream();
-        select_upstream(None)?;
-        let config = Self::load(root);
-        select_upstream(selected.as_deref())?;
-        config
+        with_upstream(None, || Self::load(root))?
     }
 
     pub fn load(root: &Path) -> Result<Config> {
