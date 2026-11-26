@@ -30,6 +30,11 @@ struct World {
 /// Upstream makes six changes after the sync point; the fork's next sync
 /// keeps some, adapts one and silently loses one.
 fn world() -> World {
+    world_with("")
+}
+
+/// [`world`], with extra lines in the fork's tether config.
+fn world_with(extra_config: &str) -> World {
     let fx = Fixture::downloaded_fork();
     let root = fx.upstream.path.parent().unwrap().to_owned();
     let upstream = Repo::init(root.join("up2"));
@@ -50,9 +55,11 @@ fn world() -> World {
     fs::create_dir_all(fork.path.join(".tether")).unwrap();
     fork.write(
         ".tether/config.toml",
-        "[upstream]\nname = \"Up\"\nurl = \"https://example.invalid/up\"\n\n\
-         [[moved]]\nfork = \"handy/\"\nupstream = \"core/\"\n\n\
-         [[owned]]\npath = \"ui/\"\n",
+        &format!(
+            "[upstream]\nname = \"Up\"\nurl = \"https://example.invalid/up\"\n\n\
+             [[moved]]\nfork = \"handy/\"\nupstream = \"core/\"\n\n\
+             [[owned]]\npath = \"ui/\"\n{extra_config}"
+        ),
     );
     fork.commit("add tether config");
 
@@ -229,4 +236,41 @@ fn prove_needs_a_previous_sync_or_a_start() {
     sync_by_hand(&w);
     let run = tether(&w.fork.path, &["prove", "--from", &base]);
     assert_eq!(run.json["data"]["counts"]["commits"], 6, "{}", run.stdout);
+}
+
+#[test]
+fn an_owned_area_on_a_review_list_waits_for_a_review() {
+    let w = world_with("\n[[review]]\nname = \"ui\"\npaths = [\"ui/*\"]\n");
+    sync_by_hand(&w);
+    let short = &w.ui[..12];
+
+    // The fork keeps its own ui, but upstream's change there needs a look.
+    let run = tether(&w.fork.path, &["prove"]);
+    assert_eq!(commit(&run.json, &w.ui)["verdict"], "review");
+    assert_eq!(finding(&run.json, &w.ui), "unproven");
+    assert_eq!(commit(&run.json, &w.ui)["review_areas"][0], "ui");
+
+    // A note is not a review.
+    let note = tether(&w.fork.path, &["decide", short, "--note", "looked"]);
+    assert_eq!(note.code, 0, "{}", note.stdout);
+    let run = tether(&w.fork.path, &["prove"]);
+    assert_eq!(finding(&run.json, &w.ui), "unproven");
+
+    let review = tether(
+        &w.fork.path,
+        &[
+            "decide",
+            short,
+            "not-applicable",
+            "--review",
+            "ui",
+            "--problem",
+            "upstream restyled its ui",
+            "--evidence",
+            "our ui has no such style",
+        ],
+    );
+    assert_eq!(review.code, 0, "{}", review.stdout);
+    let run = tether(&w.fork.path, &["prove"]);
+    assert_eq!(finding(&run.json, &w.ui), "explained", "{}", run.stdout);
 }

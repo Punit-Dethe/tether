@@ -147,15 +147,26 @@ pub fn run(dir: &Path, from: Option<&str>) -> Result<Report> {
             .needs_action();
     } else if let Some(commit) = first(Finding::Unproven) {
         let short = &commit.sha[..12];
+        let next = match commit.review_areas.first() {
+            Some(area) if commit.verdict == Verdict::Review => Next::of(
+                NextKind::Decide,
+                format!(
+                    "tether decide {short} adapted|already-covered|not-applicable --review {area} --problem \"<what upstream fixed>\" --evidence \"<what you checked in the fork>\""
+                ),
+                format!(
+                    "upstream changed code in an area the fork owns and the `{area}` review list covers; look at whether the fork has the same problem, port the fix if it does, and record the review"
+                ),
+            ),
+            _ => Next::of(
+                NextKind::Decide,
+                format!(
+                    "tether decide {short} --note \"<where and how the fork carries this change>\""
+                ),
+                "the fork's code differs where upstream changed it, so tether cannot prove the change is there; check by hand and record what you found",
+            ),
+        };
         report = report
-            .then(
-                Next::of(
-                    NextKind::Decide,
-                    format!("tether decide {short} --note \"<where and how the fork carries this change>\""),
-                    "the fork's code differs where upstream changed it, so tether cannot prove the change is there; check by hand and record what you found",
-                )
-                .with_packet(format!("tether packet {short}")),
-            )
+            .then(next.with_packet(format!("tether packet {short}")))
             .needs_action();
     }
     Ok(report)
@@ -185,7 +196,7 @@ fn detail(commits: &[CommitProof]) -> String {
         (Finding::Dropped, "Dropped: not in the code, no decision"),
         (
             Finding::Unproven,
-            "Unproven: the fork's code differs, no decision",
+            "Unproven: the fork's code differs, or an owned area needs a review",
         ),
         (Finding::Explained, "Explained by a decision"),
     ] {
@@ -202,9 +213,12 @@ fn detail(commits: &[CommitProof]) -> String {
             for file in commit
                 .files
                 .iter()
-                .filter(|f| f.missing + f.changed > 0 && finding != Finding::Explained)
+                .filter(|f| f.missing + f.changed + f.review > 0 && finding != Finding::Explained)
             {
                 let mut parts = Vec::new();
+                if file.review > 0 {
+                    parts.push(format!("{} to review", file.review));
+                }
                 if file.missing > 0 {
                     parts.push(format!("{} missing", file.missing));
                 }

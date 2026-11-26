@@ -73,9 +73,11 @@ sync (or in a sync still in progress) is tested against your tree with
   won't guess whether that's the change adapted or the change lost, so it
   asks for a note.
 
-It never calls code proven just because it looks similar. On Grain's
-72-commit sync it found a dependency bump that never landed, although the
-sync point said it had.
+If you own an area but still want to see upstream's fixes there (a frontend
+you rewrote, say), put it on a review list too. Its changes then wait for a
+recorded review, so a fix there is never waved through.
+
+It never calls code proven just because it looks similar.
 
 **Maps where you differ.** `tether map` generates a divergence map from short
 `// tether: <why>` comments in your code. You never maintain it by hand, and

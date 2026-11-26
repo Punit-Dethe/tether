@@ -16,7 +16,9 @@
 //!    it is never counted as proven; it needs a recorded decision.
 //!
 //! Hunks in owned areas, and in relocated files the port audit covers, are
-//! the fork's policy rather than a loss. A commit is proven only when every
+//! the fork's policy rather than a loss. An owned area that a review list
+//! also covers is kept by the fork but still needs a look: its hunks wait
+//! for a recorded review, so an upstream fix there is never waved through. A commit is proven only when every
 //! one of its hunks is landed, superseded or covered by policy; a missing
 //! or changed hunk needs a recorded decision that explains it.
 
@@ -45,6 +47,9 @@ pub enum Verdict {
     Partial,
     /// The fork has different code where it changed things: not provable.
     Changed,
+    /// It falls in an owned area that a review list covers: the fork keeps
+    /// its own code there, but someone must look at what upstream fixed.
+    Review,
 }
 
 /// What the verdict means once recorded decisions are taken into account.
@@ -76,6 +81,8 @@ pub struct FileProof {
     pub changed: usize,
     /// Hunks the fork's policy covers (owned area, relocated file).
     pub policy: usize,
+    /// Hunks in an owned area that a review list covers.
+    pub review: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub why: Option<&'static str>,
 }
@@ -89,6 +96,9 @@ pub struct CommitProof {
     /// The recorded decision that explains a gap.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub explained_by: Option<String>,
+    /// Review areas its owned hunks fall in, for `decide --review`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub review_areas: Vec<String>,
     pub files: Vec<FileProof>,
 }
 
@@ -275,6 +285,13 @@ pub fn prove(
             .map(|file| prove_file(config, &fork, &upstream, file))
             .collect::<Result<Vec<_>>>()?;
         let verdict = verdict(&files);
+        let mut review_areas: Vec<String> = files
+            .iter()
+            .filter(|f| f.review > 0)
+            .flat_map(|f| config.review_areas_for(&f.path).map(str::to_owned))
+            .collect();
+        review_areas.sort_unstable();
+        review_areas.dedup();
         let (finding, explained_by) = judge(verdict, decisions.get(sha));
         out.push(CommitProof {
             sha: sha.to_owned(),
@@ -282,6 +299,7 @@ pub fn prove(
             verdict,
             finding,
             explained_by,
+            review_areas,
             files,
         });
     }
@@ -342,8 +360,7 @@ fn prove_file(
     let modified = file.old.is_some() && file.new.is_some();
     if modified && !fork.files.contains_key(&fork_path) {
         if owned {
-            proof.policy = live.len();
-            proof.why = Some("owned area");
+            proof.owned(config, live.len());
         } else if config.relocations.contains_key(&path) {
             proof.policy = live.len();
             proof.why = Some("relocated: the port audit covers it");
@@ -370,8 +387,7 @@ fn prove_file(
         if fork.applies(&patch, true)? {
             proof.landed += 1;
         } else if owned {
-            proof.policy += 1;
-            proof.why = Some("owned area");
+            proof.owned(config, 1);
         } else if landed_elsewhere(fork, file, hunk, moved_to)? {
             proof.landed += 1;
             proof.why = Some("partly found in a relocated file");
@@ -431,8 +447,7 @@ fn prove_binary(
     } else if in_fork == after {
         proof.landed = 1;
     } else if config.is_owned(fork_path) {
-        proof.policy = 1;
-        proof.why = Some("owned area");
+        proof.owned(config, 1);
     } else if in_fork == before {
         proof.missing = 1;
     } else {
@@ -441,21 +456,45 @@ fn prove_binary(
     }
 }
 
+impl FileProof {
+    /// Owned hunks: the fork's policy, unless a review list asks for a look.
+    fn owned(&mut self, config: &Config, hunks: usize) {
+        if config.review_areas_for(&self.path).next().is_some() {
+            self.review += hunks;
+            self.why = Some("owned, on a review list");
+        } else {
+            self.policy += hunks;
+            self.why = Some("owned area");
+        }
+    }
+}
+
 fn verdict(files: &[FileProof]) -> Verdict {
     let sum = |f: fn(&FileProof) -> usize| files.iter().map(f).sum::<usize>();
-    let (landed, missing, changed, policy) = (
+    let (landed, missing, changed, policy, review) = (
         sum(|f| f.landed),
         sum(|f| f.missing),
         sum(|f| f.changed),
         sum(|f| f.policy),
+        sum(|f| f.review),
     );
-    match (landed, missing, changed) {
-        (_, 0, 0) if landed > 0 => Verdict::Landed,
-        (0, 0, 0) if policy > 0 => Verdict::Policy,
-        (0, 0, 0) => Verdict::Superseded,
-        (0, _, 0) => Verdict::Missing,
-        (_, m, _) if m > 0 => Verdict::Partial,
-        _ => Verdict::Changed,
+    if missing > 0 {
+        return if landed + changed + review == 0 {
+            Verdict::Missing
+        } else {
+            Verdict::Partial
+        };
+    }
+    if changed > 0 {
+        Verdict::Changed
+    } else if review > 0 {
+        Verdict::Review
+    } else if landed > 0 {
+        Verdict::Landed
+    } else if policy > 0 {
+        Verdict::Policy
+    } else {
+        Verdict::Superseded
     }
 }
 
@@ -463,6 +502,15 @@ fn verdict(files: &[FileProof]) -> Verdict {
 fn judge(verdict: Verdict, decision: Option<&Decision>) -> (Finding, Option<String>) {
     let explanation = decision.and_then(explain);
     match verdict {
+        // Only a review (or ignoring it) answers a review list; a note does
+        // not, as `tether check` would not accept one either.
+        Verdict::Review => match decision
+            .filter(|d| !d.review.is_empty() || d.status == Some(Status::Ignored))
+            .and_then(explain)
+        {
+            Some(why) => (Finding::Explained, Some(why)),
+            None => (Finding::Unproven, None),
+        },
         Verdict::Landed | Verdict::Superseded | Verdict::Policy => (Finding::Proven, None),
         Verdict::Missing | Verdict::Partial
             if decision.is_some_and(|d| d.status == Some(Status::Merged)) =>
