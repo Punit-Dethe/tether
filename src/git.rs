@@ -174,7 +174,11 @@ impl Git {
     /// (all files when `prefixes` is empty).
     pub fn ls_tree(&self, rev: &str, prefixes: &[String]) -> Result<Vec<(String, String)>> {
         let mut args = vec!["ls-tree", "-r", "-z", "--full-tree", rev, "--"];
-        args.extend(prefixes.iter().map(String::as_str));
+        // An empty prefix is the whole tree (a vendored upstream's folder
+        // maps to upstream's root), and git refuses it as a pathspec.
+        if !prefixes.iter().any(String::is_empty) {
+            args.extend(prefixes.iter().map(String::as_str));
+        }
         let out = self.raw(&args)?;
         Ok(out
             .split('\0')

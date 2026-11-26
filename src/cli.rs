@@ -19,6 +19,12 @@ pub struct Cli {
     #[arg(short = 'C', long = "repo", global = true, value_name = "DIR")]
     pub repo: Option<PathBuf>,
 
+    /// Work on an extra upstream of this repository, set up with
+    /// `tether -u <name> init`. Its state lives in `.tether/upstreams/<name>/`
+    /// and its sync point in `Upstream-Synced-<name>:` markers.
+    #[arg(short = 'u', long = "on", global = true, value_name = "NAME")]
+    pub on: Option<String>,
+
     #[command(subcommand)]
     pub command: Command,
 }
@@ -35,6 +41,10 @@ pub enum Command {
         /// Remote that points at upstream.
         #[arg(long, default_value = "upstream")]
         remote: String,
+        /// The folder upstream's whole tree lives in (a project vendored into
+        /// a subfolder), e.g. `vendor/lib/`. Usually with `--upstream <name>`.
+        #[arg(long, value_name = "DIR")]
+        prefix: Option<String>,
     },
     /// Where things stand, and the one thing to do next.
     Status,

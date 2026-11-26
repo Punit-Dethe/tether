@@ -13,7 +13,12 @@ use crate::syncpoint;
 /// The agent loop, written to `.tether/AGENT.md` by `tether init`.
 pub const AGENT_GUIDE: &str = include_str!("../../AGENT.md");
 
-pub fn run(dir: &Path, remote: &str, sync_point: Option<&str>) -> Result<Report> {
+pub fn run(
+    dir: &Path,
+    remote: &str,
+    sync_point: Option<&str>,
+    prefix: Option<&str>,
+) -> Result<Report> {
     let root = Git::new(dir).toplevel()?;
     let git = Git::new(&root);
     if !git.remotes()?.iter().any(|name| name == remote) {
@@ -21,10 +26,35 @@ pub fn run(dir: &Path, remote: &str, sync_point: Option<&str>) -> Result<Report>
             "no remote named `{remote}`; add it with `git remote add {remote} <url>`"
         )));
     }
+    let extra = crate::config::selected_upstream();
+    if extra.is_some() && !Config::exists_main(&root) {
+        return Err(Error::Refused(
+            "set up the main upstream first (`tether init`), then add extra ones with `tether -u <name> init`".into(),
+        ));
+    }
 
     let wrote_config = !Config::exists(&root);
+    if !wrote_config && prefix.is_some() {
+        return Err(Error::Refused(format!(
+            "{} already exists; set upstream.prefix there instead",
+            Config::display_path()
+        )));
+    }
     let config = if wrote_config {
-        let config = detect(&git, remote)?;
+        let mut config = detect(&git, remote)?;
+        if let Some(prefix) = prefix {
+            let prefix = format!("{}/", prefix.trim_matches('/').replace('\\', "/"));
+            config.upstream.prefix = Some(prefix);
+        }
+        if let Some(name) = &extra {
+            // Each upstream needs its own remote.
+            if Config::load_main(&root)?.upstream.remote == remote {
+                return Err(Error::Refused(format!(
+                    "the main upstream already uses the `{remote}` remote; add one for {name} (`git remote add {name} <url>`) and pass --remote {name}"
+                )));
+            }
+        }
+        config.validate()?;
         let path = Config::path(&root);
         std::fs::create_dir_all(path.parent().expect("config has a parent"))?;
         std::fs::write(&path, config.to_toml())?;
@@ -33,8 +63,8 @@ pub fn run(dir: &Path, remote: &str, sync_point: Option<&str>) -> Result<Report>
         Config::load(&root)?
     };
 
-    // The agent loop, next to the config, so any agent working here finds it.
-    let guide = Config::path(&root).with_file_name("AGENT.md");
+    // The agent loop, in .tether/, so any agent working here finds it.
+    let guide = root.join(crate::config::STATE_DIR).join("AGENT.md");
     if !guide.exists() {
         std::fs::create_dir_all(guide.parent().expect("guide has a parent"))?;
         std::fs::write(&guide, AGENT_GUIDE)?;
@@ -51,12 +81,12 @@ pub fn run(dir: &Path, remote: &str, sync_point: Option<&str>) -> Result<Report>
         Err(error) => return Err(error),
     };
     let summary = match (wrote_config, &recorded) {
-        (true, _) => "Wrote .tether/config.toml.".to_owned(),
+        (true, _) => format!("Wrote {}.", Config::display_path()),
         (false, Some(_)) => "Recorded the sync point.".to_owned(),
         (false, None) => "tether was already set up; nothing changed.".to_owned(),
     };
     let data = json!({
-        "config": ".tether/config.toml",
+        "config": Config::display_path(),
         "wrote_config": wrote_config,
         "upstream": config.upstream,
         "recorded_sync_point": recorded,
@@ -103,6 +133,7 @@ fn detect(git: &Git, remote: &str) -> Result<Config> {
             track: Default::default(),
             tags: "v*".into(),
             prereleases: false,
+            prefix: None,
         },
         moved: Vec::new(),
         owned: Vec::new(),
@@ -113,6 +144,7 @@ fn detect(git: &Git, remote: &str) -> Result<Config> {
         agent: Default::default(),
         verify: Default::default(),
         deps: Default::default(),
+        scope_from_prefix: false,
         map: Default::default(),
         security: Default::default(),
         sync: Default::default(),

@@ -1,9 +1,14 @@
 # Where tether could go next
 
-Status: ideas, not commitments (November 2026). Nothing here is being built
-yet; tether as it is today is enough for Grain. This page records the
+Status: ideas, not commitments (November 2026). This page records the
 directions worth taking, why, and in what order, so the next step is a
 decision rather than a brainstorm.
+
+**Built (27 November 2026):** direction 1, `tether deps`, as a read-only
+command and MCP tool (not yet in the inbox or dashboard), and direction 2,
+several upstreams (`tether -u <name> …`, with `upstream.prefix` for a
+vendored folder). Deferred by decision: runs by itself, agents prove it, give
+fixes back, other tools' output, many repositories.
 
 ## The idea in one line
 

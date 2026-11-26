@@ -13,6 +13,57 @@ use crate::paths::glob_match;
 
 pub const STATE_DIR: &str = ".tether";
 pub const CONFIG_FILE: &str = "config.toml";
+/// Where each extra upstream keeps its own config, decisions and budgets.
+pub const UPSTREAMS_DIR: &str = "upstreams";
+
+/// The extra upstream this process works on (`--upstream <name>`); `None`
+/// is the main one. Set once at start, or per call by the MCP server.
+static SELECTED: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
+
+/// Work on the extra upstream `name` (or the main one, for `None`).
+pub fn select_upstream(name: Option<&str>) -> Result<()> {
+    if let Some(name) = name {
+        let valid = !name.is_empty()
+            && name.len() <= 40
+            && name
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_');
+        if !valid {
+            return Err(Error::Refused(format!(
+                "an upstream name is lower-case letters, digits, `-` or `_`: {name:?}"
+            )));
+        }
+    }
+    *SELECTED.write().expect("upstream selection lock") = name.map(str::to_owned);
+    Ok(())
+}
+
+/// The extra upstream selected, if any.
+pub fn selected_upstream() -> Option<String> {
+    SELECTED.read().expect("upstream selection lock").clone()
+}
+
+/// The selected upstream's state directory, relative to the repository:
+/// `.tether`, or `.tether/upstreams/<name>`.
+pub fn state_dir() -> String {
+    match selected_upstream() {
+        Some(name) => format!("{STATE_DIR}/{UPSTREAMS_DIR}/{name}"),
+        None => STATE_DIR.to_owned(),
+    }
+}
+
+/// Names of the extra upstreams set up in this repository.
+pub fn extra_upstreams(root: &Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(root.join(STATE_DIR).join(UPSTREAMS_DIR))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|entry| entry.path().join(CONFIG_FILE).is_file())
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -63,6 +114,10 @@ pub struct Config {
     /// Libraries the fork takes from git rather than a registry (`tether deps`).
     #[serde(default, skip_serializing_if = "Deps::is_empty")]
     pub deps: Deps,
+
+    /// `budget.scope` was filled in from `upstream.prefix`, not written.
+    #[serde(skip)]
+    pub scope_from_prefix: bool,
 }
 
 /// Forked libraries (`tether deps`).
@@ -208,6 +263,10 @@ pub struct Upstream {
     /// Count tags with a pre-release suffix (`v2.0.0-rc.1`) as releases.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub prereleases: bool,
+    /// The folder upstream's whole tree lives in, for a project vendored
+    /// into a subfolder (`vendor/lib/`). Ends with `/`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prefix: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -428,19 +487,41 @@ fn default_window() -> usize {
 impl Config {
     /// Prefixes whose files need intent markers.
     pub fn map_scope(&self) -> &[String] {
-        if self.map.scope.is_empty() {
+        if self.map.scope.is_empty() && self.scope_from_prefix {
+            &[]
+        } else if self.map.scope.is_empty() {
             &self.budget.scope
         } else {
             &self.map.scope
         }
     }
 
+    /// The selected upstream's config file (see [`select_upstream`]).
     pub fn path(root: &Path) -> PathBuf {
-        root.join(STATE_DIR).join(CONFIG_FILE)
+        root.join(state_dir()).join(CONFIG_FILE)
     }
 
     pub fn exists(root: &Path) -> bool {
         Self::path(root).is_file()
+    }
+
+    /// The selected upstream's config, as a repository path for messages.
+    pub fn display_path() -> String {
+        format!("{}/{CONFIG_FILE}", state_dir())
+    }
+
+    /// Is the main upstream set up (whichever upstream is selected)?
+    pub fn exists_main(root: &Path) -> bool {
+        root.join(STATE_DIR).join(CONFIG_FILE).is_file()
+    }
+
+    /// The main upstream's config, whichever upstream is selected.
+    pub fn load_main(root: &Path) -> Result<Config> {
+        let selected = selected_upstream();
+        select_upstream(None)?;
+        let config = Self::load(root);
+        select_upstream(selected.as_deref())?;
+        config
     }
 
     pub fn load(root: &Path) -> Result<Config> {
@@ -452,23 +533,49 @@ impl Config {
             }
             Err(error) => return Err(error.into()),
         };
-        let config: Config = toml::from_str(&text).map_err(|error| Error::BadConfig {
-            path: format!("{STATE_DIR}/{CONFIG_FILE}"),
+        let mut config: Config = toml::from_str(&text).map_err(|error| Error::BadConfig {
+            path: format!("{}/{CONFIG_FILE}", state_dir()),
             message: error.to_string(),
         })?;
         config.validate()?;
+        // A vendored upstream's divergence is only what lies in its folder.
+        if let Some(prefix) = &config.upstream.prefix {
+            if config.budget.scope.is_empty() {
+                config.budget.scope = vec![prefix.clone()];
+                config.scope_from_prefix = true;
+            }
+        }
         Ok(config)
+    }
+
+    /// Extra `git merge` / `merge-tree` options: a vendored upstream's tree
+    /// is shifted into its folder.
+    pub fn merge_options(&self) -> Vec<String> {
+        match &self.upstream.prefix {
+            Some(prefix) => vec![format!("-Xsubtree={}", prefix.trim_end_matches('/'))],
+            None => Vec::new(),
+        }
     }
 
     pub fn to_toml(&self) -> String {
         toml::to_string(self).expect("config is always serialisable")
     }
 
-    fn validate(&self) -> Result<()> {
+    pub(crate) fn validate(&self) -> Result<()> {
         let bad = |message: String| Error::BadConfig {
-            path: format!("{STATE_DIR}/{CONFIG_FILE}"),
+            path: format!("{}/{CONFIG_FILE}", state_dir()),
             message,
         };
+        if let Some(prefix) = &self.upstream.prefix {
+            if !prefix.ends_with('/') || prefix.starts_with('/') || prefix.contains("..") {
+                return Err(bad(format!(
+                    "upstream.prefix must be a relative folder ending with `/`: {prefix}"
+                )));
+            }
+            if prefix.starts_with(".tether/") {
+                return Err(bad("upstream.prefix cannot be inside .tether/".into()));
+            }
+        }
         if self.map.marker.trim().is_empty() {
             return Err(bad("[map] marker must not be empty".into()));
         }
@@ -538,6 +645,11 @@ impl Config {
                 return format!("{}{rest}", moved.upstream);
             }
         }
+        if let Some(prefix) = &self.upstream.prefix {
+            if let Some(rest) = fork_path.strip_prefix(prefix.as_str()) {
+                return rest.to_owned();
+            }
+        }
         fork_path.to_owned()
     }
 
@@ -550,6 +662,9 @@ impl Config {
                     return format!("{}{rest}", moved.fork);
                 }
             }
+        }
+        if let Some(prefix) = &self.upstream.prefix {
+            return format!("{prefix}{upstream_path}");
         }
         upstream_path.to_owned()
     }

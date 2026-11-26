@@ -8,7 +8,6 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::STATE_DIR;
 use crate::error::{Error, Result};
 
 pub const FILE: &str = "folders.toml";
@@ -30,7 +29,7 @@ pub struct Folders {
 }
 
 fn path(root: &Path) -> PathBuf {
-    root.join(STATE_DIR).join(FILE)
+    root.join(crate::config::state_dir()).join(FILE)
 }
 
 pub fn load(root: &Path) -> Result<Folders> {
@@ -41,7 +40,7 @@ pub fn load(root: &Path) -> Result<Folders> {
         Err(err) => return Err(err.into()),
     };
     toml::from_str(&text).map_err(|err| Error::BadConfig {
-        path: format!("{STATE_DIR}/{FILE}"),
+        path: format!("{}/{FILE}", crate::config::state_dir()),
         message: err.message().to_owned(),
     })
 }

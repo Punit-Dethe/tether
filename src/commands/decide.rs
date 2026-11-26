@@ -136,7 +136,7 @@ pub fn run(dir: &Path, args: Args) -> Result<Report> {
     }
 
     decisions::save(&fork.root, &item.sha, &decision)?;
-    let file = format!(".tether/decisions/{}.toml", item.sha);
+    let file = format!("{}/decisions/{}.toml", crate::config::state_dir(), item.sha);
     let summary = if decision.is_empty() {
         format!(
             "{} now follows the sync point; no decision stored.",

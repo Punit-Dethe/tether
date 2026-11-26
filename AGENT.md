@@ -30,6 +30,17 @@ works offline. Without a fetch it reports what you last fetched.
 
 4. Go back to step 1.
 
+**Several upstreams.** If `.tether/upstreams/` exists, the repository has
+extra upstreams. Plain `tether status` covers all of them (see
+`data.upstreams`), and its `next.command` already carries `-u <name>` when the
+work is on an extra one. Keep that flag on every command for that upstream;
+each one has its own decisions and sync point.
+
+**Forked libraries.** `tether deps --json` lists libraries taken from git.
+Only `whose: "yours"` ones are this repository's job; `upstream` ones are
+maintained by the project this fork came from. It only reports. Never bump a
+pin or rebase a library fork unless the person asks.
+
 ## Rules
 
 - **Never guess.** If a packet does not tell you enough, read the files it

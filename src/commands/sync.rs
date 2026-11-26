@@ -128,7 +128,13 @@ fn start(fork: &Fork, args: &Args) -> Result<Report> {
         )?,
         None => 0,
     };
-    let merged = engine::squash_merge(git, &fork.config.sync.merge_settings(), &base, &target)?;
+    let merged = engine::squash_merge(
+        git,
+        &fork.config.sync.merge_settings(),
+        &fork.config.merge_options(),
+        &base,
+        &target,
+    )?;
     let conflicts = engine::conflicted(git)?;
     if merged.status > 1 || (merged.status == 1 && conflicts.is_empty()) {
         return Err(Error::GitFailed {
@@ -226,18 +232,14 @@ pub(crate) fn preview(fork: &Fork, base: &str, target: &str) -> Result<(Vec<Stri
     // The real merge's settings ([sync] git_config: merge drivers, rename
     // handling), or the preview reports conflicts the sync would not raise.
     let settings = fork.config.sync.merge_settings();
+    let options = fork.config.merge_options();
     let mut args: Vec<&str> = Vec::new();
     for setting in &settings {
         args.extend(["-c", setting.as_str()]);
     }
-    args.extend([
-        "merge-tree",
-        "--write-tree",
-        "--name-only",
-        &merge_base,
-        "HEAD",
-        target,
-    ]);
+    args.extend(["merge-tree", "--write-tree", "--name-only", &merge_base]);
+    args.extend(options.iter().map(String::as_str));
+    args.extend(["HEAD", target]);
     let out = fork.git.run(&args)?;
     if out.status > 1 {
         return Err(Error::GitFailed {

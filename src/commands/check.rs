@@ -263,13 +263,14 @@ fn update(fork: &Fork, accept_growth: bool) -> Result<Report> {
     Ok(Report::success(
         "check",
         format!(
-            "Updated .tether/budgets.toml: {} file(s) carry divergence.",
+            "Updated {}/budgets.toml: {} file(s) carry divergence.",
+            crate::config::state_dir(),
             updated.files.len()
         ),
         json!({ "files": updated.files.len(), "adopted": updated.adopted.len() }),
     )
     .with_next(
-        "git add .tether/budgets.toml",
+        format!("git add {}/budgets.toml", crate::config::state_dir()),
         "commit the new baseline with the change that caused it",
     ))
 }

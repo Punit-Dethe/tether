@@ -53,7 +53,11 @@ pub fn run(command: &Command, dir: &Path) -> Report {
                 delete: *delete,
             },
         ),
-        Command::Init { sync_point, remote } => init::run(dir, remote, sync_point.as_deref()),
+        Command::Init {
+            sync_point,
+            remote,
+            prefix,
+        } => init::run(dir, remote, sync_point.as_deref(), prefix.as_deref()),
         Command::Inbox { all, security } => inbox::run(dir, *all, *security),
         Command::Sync {
             target,
@@ -138,7 +142,20 @@ pub fn run(command: &Command, dir: &Path) -> Report {
             },
         ),
     };
-    result.unwrap_or_else(|error| Report::failure(name, &error))
+    let mut report = result.unwrap_or_else(|error| Report::failure(name, &error));
+    // On an extra upstream, every suggested command must stay on it.
+    if let (Some(upstream), Some(next)) = (crate::config::selected_upstream(), &mut report.next) {
+        let on = |command: &mut String| {
+            if let Some(rest) = command.strip_prefix("tether ") {
+                *command = format!("tether -u {upstream} {rest}");
+            }
+        };
+        on(&mut next.command);
+        if let Some(packet) = &mut next.packet {
+            on(packet);
+        }
+    }
+    report
 }
 
 /// The repository root, git bound to it, and its loaded config.

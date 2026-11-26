@@ -16,7 +16,7 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use crate::config::{Config, STATE_DIR};
+use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::git::Git;
 
@@ -24,10 +24,10 @@ pub const REASONS: &str = "reasons.toml";
 
 /// `.tether/reasons.toml`: fork path → why the whole file differs.
 pub fn load_reasons(root: &Path) -> Result<BTreeMap<String, String>> {
-    let path = root.join(STATE_DIR).join(REASONS);
+    let path = root.join(crate::config::state_dir()).join(REASONS);
     match std::fs::read_to_string(&path) {
         Ok(text) => toml::from_str(&text).map_err(|error| Error::BadConfig {
-            path: format!("{STATE_DIR}/{REASONS}"),
+            path: format!("{}/{REASONS}", crate::config::state_dir()),
             message: error.to_string(),
         }),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(BTreeMap::new()),
@@ -36,14 +36,14 @@ pub fn load_reasons(root: &Path) -> Result<BTreeMap<String, String>> {
 }
 
 pub fn save_reasons(root: &Path, reasons: &BTreeMap<String, String>) -> Result<()> {
-    let path = root.join(STATE_DIR).join(REASONS);
+    let path = root.join(crate::config::state_dir()).join(REASONS);
     if reasons.is_empty() {
         match std::fs::remove_file(&path) {
             Err(error) if error.kind() != std::io::ErrorKind::NotFound => return Err(error.into()),
             _ => return Ok(()),
         }
     }
-    std::fs::create_dir_all(root.join(STATE_DIR))?;
+    std::fs::create_dir_all(root.join(crate::config::state_dir()))?;
     std::fs::write(path, toml::to_string(reasons).expect("strings serialise"))?;
     Ok(())
 }

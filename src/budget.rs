@@ -17,7 +17,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::{Config, STATE_DIR};
+use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::git::Git;
 
@@ -40,10 +40,10 @@ pub struct Baseline {
 
 impl Baseline {
     pub fn load(root: &Path) -> Result<Baseline> {
-        let path = root.join(STATE_DIR).join(FILE);
+        let path = root.join(crate::config::state_dir()).join(FILE);
         match std::fs::read_to_string(&path) {
             Ok(text) => toml::from_str(&text).map_err(|error| Error::BadConfig {
-                path: format!("{STATE_DIR}/{FILE}"),
+                path: format!("{}/{FILE}", crate::config::state_dir()),
                 message: error.to_string(),
             }),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Baseline::default()),
@@ -53,8 +53,8 @@ impl Baseline {
 
     pub fn save(&self, root: &Path) -> Result<()> {
         let text = toml::to_string(self).expect("a baseline is always serialisable");
-        std::fs::create_dir_all(root.join(STATE_DIR))?;
-        std::fs::write(root.join(STATE_DIR).join(FILE), text)?;
+        std::fs::create_dir_all(root.join(crate::config::state_dir()))?;
+        std::fs::write(root.join(crate::config::state_dir()).join(FILE), text)?;
         Ok(())
     }
 }

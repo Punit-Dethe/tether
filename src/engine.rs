@@ -81,6 +81,7 @@ pub fn sync_message(git: &Git, config: &Config, base: &str, target: &str) -> Res
 pub fn squash_merge(
     git: &Git,
     settings: &[String],
+    options: &[String],
     base: &str,
     target: &str,
 ) -> Result<crate::git::Output> {
@@ -103,7 +104,9 @@ pub fn squash_merge(
     for setting in settings {
         args.extend(["-c", setting.as_str()]);
     }
-    args.extend(["merge", "--squash", target]);
+    args.extend(["merge", "--squash"]);
+    args.extend(options.iter().map(String::as_str));
+    args.push(target);
     let merged = git.run(&args);
     if grafted {
         let _ = git.run(&["replace", "-d", &head]);

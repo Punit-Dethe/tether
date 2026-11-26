@@ -10,7 +10,6 @@ use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::STATE_DIR;
 use crate::error::{Error, Result};
 
 pub const DIR: &str = "decisions";
@@ -85,7 +84,7 @@ impl Decision {
 pub type Decisions = BTreeMap<String, Decision>;
 
 pub fn dir(root: &Path) -> PathBuf {
-    root.join(STATE_DIR).join(DIR)
+    root.join(crate::config::state_dir()).join(DIR)
 }
 
 /// Every recorded decision, keyed by full upstream sha.
@@ -106,7 +105,7 @@ pub fn load(root: &Path) -> Result<Decisions> {
             continue;
         };
         let bad = |message: String| Error::BadConfig {
-            path: format!("{STATE_DIR}/{DIR}/{sha}.toml"),
+            path: format!("{}/{DIR}/{sha}.toml", crate::config::state_dir()),
             message,
         };
         if sha.len() != 40 || !sha.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {

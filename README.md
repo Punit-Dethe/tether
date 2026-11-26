@@ -70,6 +70,54 @@ a reading aid and never change what a sync does.
 **Guards it all in CI.** `tether check` is one gate for size budgets, stray
 changes, owned areas, drift, ports and reviews.
 
+**Watches the libraries you forked.** `tether deps` lists every dependency
+your project takes from git instead of a registry (`Cargo.toml` with its
+lockfile, `package.json`, `.gitmodules`) and sorts them three ways:
+
+- **Yours:** forks you maintain. tether fetches each one and the project it
+  came from, and tells you how far behind it is, which releases your pin is
+  missing, which upstream commits look like security fixes, which ones touch
+  files your fork changed, and whether merging upstream would conflict.
+- **Maintained by your upstream:** forks the project you forked pins or owns
+  too, so keeping them current is its job. They're tagged, not hidden.
+- **Someone else's.**
+
+Pins that follow a branch, or have no pin at all, are flagged and checked
+against the branch as it is now. `tether deps <name>` shows one library with
+every upstream change. It works without `tether init`, and the cache lives in
+`.git/`, so nothing is added to your tree.
+
+```text
+Yours
+  transcribe.cpp   Punit-Dethe/transcribe.cpp @ rev 1d1ce5fc
+      7 ahead, 35 behind handy-computer/transcribe.cpp (main), 65 files changed
+      17 upstream commits touch files your fork changed
+      not in your pin: v0.5.0, v0.4.2, v0.4.1, v0.3.1
+  xn               Punit-Dethe/xn @ rev 9413681e
+      2 ahead, 0 behind gradium-ai/xn (main), 5 files changed
+
+Maintained upstream
+  rdev             rustdesk-org/rdev @ no pin  [Handy]
+      no pin: builds whatever the default branch is when the lockfile refreshes
+      the default branch has moved to bfb28541 since your lockfile
+  tao              cjpais/tao @ rev c3bee28c  [Handy]
+```
+
+**Handles more than one upstream.** A repository built from several projects,
+say an app forked from one with a library forked from another vendored in
+`vendor/lib/`, gives each its own sync point, inbox, plan and decisions:
+
+```sh
+git remote add lib <url-of-the-library>
+tether -u lib init --remote lib --prefix vendor/lib/ --sync-point <commit>
+tether -u lib status        # or: tether --on lib status
+tether -u lib sync          # upstream's tree lands inside vendor/lib/
+```
+
+The extra upstream keeps its state in `.tether/upstreams/lib/` and its sync
+point in `Upstream-Synced-lib:` lines. Plain `tether status` covers every
+upstream and points at whichever one needs you.
+
 ## How it compares
 
 The right tool depends on the fork you have. The table groups what people need
@@ -135,12 +183,14 @@ tether ui
 | `folder` | Group commits into folders of your own |
 | `check` | The CI gate |
 | `closeout <rev>` | Move the sync point over fully decided commits |
+| `deps [name]` | Libraries from git: yours, your upstream's, others; what changed upstream (`--no-fetch`) |
 | `doctor` | Check git and the repository, in plain words |
 | `ui` | Open the local dashboard |
 | `mcp` | Serve the commands as MCP tools |
 
-Add `--json` to any command for the machine-readable report. Items are a
-commit sha prefix or a PR number like `#412`.
+Add `--json` to any command for the machine-readable report, and
+`-u <name>` to work on an extra upstream. Items are a commit sha prefix or a
+PR number like `#412`.
 
 **2. In the browser.** `tether ui` opens the dashboard in the screenshots
 above. It listens only on your own machine, refuses requests from other
@@ -162,7 +212,9 @@ Other apps take the same command in their MCP settings:
 
 | Always available (read-only) | Only with `--allow-writes` |
 | --- | --- |
-| `status`, `inbox`, `plan`, `packet`, `sync_preview`, `map`, `check`, `doctor`, `folder` | `decide`, `sync`, `verify`, `closeout` |
+| `status`, `inbox`, `plan`, `packet`, `sync_preview`, `map`, `check`, `deps`, `doctor`, `folder` | `decide`, `sync`, `verify`, `closeout` |
+
+For an extra upstream, start a second server with `tether -u <name> mcp`.
 
 Only a person can turn writes on, because the flag lives in the app's
 settings. Every tool call counts as an agent's, so your fork's rules about what
@@ -208,11 +260,8 @@ Python tooling it replaced: 299 tracked commits, a 72-commit sync with 13
 conflicts, 42 size budgets, the port audit and the review gate. The roadmap is
 in [docs/PLAN.md](docs/PLAN.md).
 
-**Planned: several upstreams in one repository.** Today tether tracks one
-upstream per repository. Some products are built from more than one project,
-for example an app forked from one project with a library forked from another
-vendored inside it. Support for that is planned: each upstream would get its
-own sync point, inbox, plan and decisions, all from the same repository.
+New and less proven: `tether deps` and several upstreams in one repository.
+The dashboard shows the main upstream only for now.
 
 ## Licence
 

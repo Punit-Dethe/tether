@@ -29,7 +29,7 @@ pub fn run(dir: &Path, args: Args) -> Result<Report> {
     let text = map::render(&files, &base, marker);
     let unmarked: usize = files.iter().map(|f| f.unmarked.len()).sum();
     if args.write {
-        let path = fork.root.join(crate::config::STATE_DIR).join(MAP_FILE);
+        let path = fork.root.join(crate::config::state_dir()).join(MAP_FILE);
         std::fs::create_dir_all(path.parent().expect("has a parent"))?;
         std::fs::write(path, &text)?;
     }

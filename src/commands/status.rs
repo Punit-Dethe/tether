@@ -26,7 +26,55 @@ use crate::inbox::{Item, State};
 use crate::report::{Next, NextKind, Report};
 use crate::session;
 
+/// The selected upstream's status; for the main one, the extra upstreams'
+/// too, so one `tether status` covers the whole repository.
 pub fn run(dir: &Path) -> Result<Report> {
+    let mut report = run_one(dir)?;
+    if crate::config::selected_upstream().is_some() {
+        return Ok(report);
+    }
+    let root = Git::new(dir).toplevel()?;
+    let extras = crate::config::extra_upstreams(&root);
+    if extras.is_empty() {
+        return Ok(report);
+    }
+    let mut upstreams = Vec::new();
+    let mut lines = Vec::new();
+    for name in &extras {
+        crate::config::select_upstream(Some(name))?;
+        let theirs = run_one(dir);
+        crate::config::select_upstream(None)?;
+        let theirs = theirs.unwrap_or_else(|error| Report::failure("status", &error));
+        let next = theirs.next.clone().map(|mut next| {
+            if let Some(rest) = next.command.strip_prefix("tether ") {
+                next.command = format!("tether -u {name} {rest}");
+            }
+            next
+        });
+        lines.push(format!("{name}: {}", theirs.summary));
+        // The main upstream's next step comes first; an extra one's only
+        // when the main one has nothing to do.
+        if report.next.is_none() {
+            if let Some(next) = next.clone() {
+                report = report.then(next).needs_action();
+            }
+        }
+        upstreams.push(json!({
+            "name": name,
+            "ok": theirs.ok,
+            "summary": theirs.summary,
+            "phase": theirs.data.get("phase"),
+            "next": next,
+        }));
+    }
+    if let Some(data) = report.data.as_object_mut() {
+        data.insert("upstreams".into(), json!(upstreams));
+    }
+    report.detail = Some(format!("Other upstreams\n  {}", lines.join("\n  ")));
+    Ok(report)
+}
+
+fn run_one(dir: &Path) -> Result<Report> {
     let fork = match Fork::open(dir) {
         Ok(fork) => fork,
         Err(Error::NotConfigured) => {
@@ -145,7 +193,10 @@ pub fn run(dir: &Path) -> Result<Report> {
     } else if uncommitted {
         (
             "record",
-            "Changes under .tether/ (config, decisions, budgets) are not committed.".to_owned(),
+            format!(
+                "Changes under {}/ (config, decisions, budgets) are not committed.",
+                crate::config::state_dir()
+            ),
             Some(Next::run(
                 record_command,
                 "commit the decisions so the next sync and CI see them",

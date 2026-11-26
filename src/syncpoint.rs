@@ -21,6 +21,16 @@ use crate::git::Git;
 
 pub const MARKER: &str = "Upstream-Synced";
 
+/// The trailer key of the selected upstream: `Upstream-Synced` for the main
+/// one, `Upstream-Synced-<name>` for an extra one, so each keeps its own
+/// sync point in the same history.
+pub fn marker() -> String {
+    match crate::config::selected_upstream() {
+        Some(name) => format!("{MARKER}-{name}"),
+        None => MARKER.to_owned(),
+    }
+}
+
 /// The line a sync or close-out commit carries.
 pub fn marker_line(sha: &str) -> Result<String> {
     if !is_full_sha(sha) {
@@ -28,7 +38,7 @@ pub fn marker_line(sha: &str) -> Result<String> {
             "a sync marker needs a full 40-character sha, got {sha:?}"
         )));
     }
-    Ok(format!("{MARKER}: {}", sha.to_ascii_lowercase()))
+    Ok(format!("{}: {}", marker(), sha.to_ascii_lowercase()))
 }
 
 fn is_full_sha(text: &str) -> bool {
@@ -39,7 +49,12 @@ fn is_full_sha(text: &str) -> bool {
 /// case-insensitively and may be followed by spaces or tabs, as git trailers
 /// are written by hand.
 pub fn parse_markers(message: &str) -> Vec<String> {
-    let key = format!("{}:", MARKER.to_ascii_lowercase());
+    parse_markers_with(&marker(), message)
+}
+
+/// [`parse_markers`] for the trailer key `key`.
+pub fn parse_markers_with(key: &str, message: &str) -> Vec<String> {
+    let key = format!("{}:", key.to_ascii_lowercase());
     message
         .split('\n')
         .filter_map(|line| {
@@ -55,7 +70,7 @@ pub fn parse_markers(message: &str) -> Vec<String> {
 
 /// Every (fork commit, upstream sha) marker reachable from `rev`, newest first.
 pub fn markers(git: &Git, rev: &str) -> Result<Vec<(String, String)>> {
-    let grep = format!("--grep=^{MARKER}:");
+    let grep = format!("--grep=^{}:", marker());
     let out = git.raw(&["log", rev, "-E", &grep, "--format=%H%x00%B%x01"])?;
     let mut found = Vec::new();
     for record in out.split('\x01') {
@@ -164,6 +179,19 @@ mod tests {
         let msg = "Upstream-Synced: 0123456\nsee Upstream-Synced: in docs\n";
         assert!(parse_markers(msg).is_empty());
         assert!(parse_markers(&format!("x Upstream-Synced: {A}")).is_empty());
+    }
+
+    #[test]
+    fn each_upstream_reads_only_its_own_marker() {
+        let msg = format!(
+            "sync\n\nUpstream-Synced: {A}\nUpstream-Synced-lib: {}\n",
+            "b".repeat(40)
+        );
+        assert_eq!(parse_markers_with(MARKER, &msg), vec![A.to_owned()]);
+        assert_eq!(
+            parse_markers_with("Upstream-Synced-lib", &msg),
+            vec!["b".repeat(40)]
+        );
     }
 
     #[test]
