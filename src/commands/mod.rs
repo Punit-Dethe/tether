@@ -4,10 +4,12 @@ mod check;
 mod closeout;
 mod decide;
 mod doctor;
+mod folder;
 mod inbox;
 mod init;
 mod map;
 mod packet;
+mod plan;
 mod status;
 pub(crate) mod sync;
 mod verify;
@@ -28,6 +30,23 @@ pub fn run(command: &Command, dir: &Path) -> Report {
             .map(|()| Report::success(name, "tether ui stopped.", serde_json::Value::Null))
             .map_err(Into::into),
         Command::Status => status::run(dir),
+        Command::Plan => plan::run(dir),
+        Command::Folder {
+            name,
+            items,
+            unfile,
+            rename,
+            delete,
+        } => folder::run(
+            dir,
+            folder::Args {
+                name: name.as_deref(),
+                items,
+                unfile,
+                rename: rename.as_deref(),
+                delete: *delete,
+            },
+        ),
         Command::Init { sync_point, remote } => init::run(dir, remote, sync_point.as_deref()),
         Command::Inbox { all, security } => inbox::run(dir, *all, *security),
         Command::Sync {

@@ -19,13 +19,17 @@ pub fn tag_namespace(remote: &str) -> String {
     format!("refs/tether/tags/{remote}/")
 }
 
-/// Fetch upstream: the branch always, and its tags when tracking releases.
+/// Fetch upstream: the branch, and its tags into tether's own namespace.
+/// Tags are needed when tracking releases; when tracking the branch they
+/// only label which release first shipped each commit, so a remote that
+/// refuses them is not an error there.
 pub fn fetch(git: &Git, config: &Config) -> Result<()> {
     let remote = &config.upstream.remote;
     git.ok(&["fetch", "--quiet", remote])?;
+    let refspec = format!("+refs/tags/*:{}*", tag_namespace(remote));
+    let tags = git.ok(&["fetch", "--quiet", "--no-tags", remote, &refspec]);
     if config.upstream.track == Track::Releases {
-        let refspec = format!("+refs/tags/*:{}*", tag_namespace(remote));
-        git.ok(&["fetch", "--quiet", "--no-tags", remote, &refspec])?;
+        tags?;
     }
     Ok(())
 }

@@ -221,7 +221,7 @@ pub(crate) fn resolve_next(conflicts: &[String]) -> Next {
 
 /// Conflicts a merge would raise, split into (needs a person, owned area),
 /// computed in memory without touching the working tree.
-fn preview(fork: &Fork, base: &str, target: &str) -> Result<(Vec<String>, Vec<String>)> {
+pub(crate) fn preview(fork: &Fork, base: &str, target: &str) -> Result<(Vec<String>, Vec<String>)> {
     let merge_base = format!("--merge-base={base}");
     // The real merge's settings ([sync] git_config: merge drivers, rename
     // handling), or the preview reports conflicts the sync would not raise.

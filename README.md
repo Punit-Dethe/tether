@@ -31,9 +31,15 @@ always says what to do next.
 - **Verify three ways.** Build and test your fork as it was, upstream as it
   shipped, and the result — so you know whose test broke.
 - **A divergence map generated from the code**, not maintained by hand.
-- **A local dashboard.** `tether ui` opens a read-only page of the same
-  reports in your browser: what is waiting, what a sync would conflict on,
-  and where your fork differs. It listens on this machine only.
+- **Plan the sync.** `tether plan` finds the furthest point you can sync to
+  with no conflict, previews each upstream release in range, and sorts the
+  waiting commits from easiest to hardest by what they touch in your fork.
+- **Folders.** `tether folder <name> <commits>…` groups upstream commits your
+  own way, for reading; it never changes what a sync does.
+- **A local dashboard.** `tether ui` opens the same reports in your browser:
+  what is waiting, the sync plan, releases, and where your fork differs, with
+  drag-and-drop folders. It listens on this machine only and changes nothing
+  else.
 
 ## Try it
 

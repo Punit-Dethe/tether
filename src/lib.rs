@@ -11,6 +11,7 @@ pub mod config;
 pub mod decisions;
 pub mod engine;
 pub mod error;
+pub mod folders;
 pub mod git;
 pub mod inbox;
 pub mod map;

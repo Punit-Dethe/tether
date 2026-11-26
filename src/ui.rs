@@ -2,9 +2,9 @@
 //!
 //! A tiny standard-library HTTP server bound to loopback. It serves one
 //! embedded page and a handful of JSON routes, each the exact `--json`
-//! envelope of a read-only command, so the page shows nothing an agent
-//! could not already read. Nothing here writes to the repository: no fetch,
-//! no decide, no sync.
+//! envelope of a command, so the page shows nothing an agent could not
+//! already read. The only write is filing commits into folders (a reading
+//! aid in `.tether/folders.toml`): no fetch, no decide, no sync.
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -17,6 +17,35 @@ use crate::commands;
 const PAGE: &str = include_str!("ui/index.html");
 /// Longest request head we read; anything bigger is not from our page.
 const MAX_HEAD: usize = 16 * 1024;
+/// Longest request body we accept (a folder change).
+const MAX_BODY: usize = 64 * 1024;
+
+/// One parsed HTTP request.
+#[derive(Debug, Default)]
+pub struct Request<'a> {
+    pub method: &'a str,
+    pub target: &'a str,
+    pub host: Option<&'a str>,
+    pub origin: Option<&'a str>,
+    pub content_type: Option<&'a str>,
+    pub body: &'a [u8],
+}
+
+/// A folder change from the page: the `tether folder` arguments.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FolderChange {
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    items: Vec<String>,
+    #[serde(default)]
+    unfile: Vec<String>,
+    #[serde(default)]
+    rename: Option<String>,
+    #[serde(default)]
+    delete: bool,
+}
 
 /// One HTTP response, before it is written.
 #[derive(Debug, PartialEq, Eq)]
@@ -40,18 +69,56 @@ impl Response {
     }
 }
 
-/// Answer one request. `host` is the request's Host header and `port` the
-/// port we listen on; any other host is refused so a web page elsewhere
-/// cannot reach this server through DNS rebinding.
-pub fn handle(dir: &Path, method: &str, target: &str, host: Option<&str>, port: u16) -> Response {
+/// Answer one request. `port` is the port we listen on. Any Host but ours is
+/// refused, so a web page elsewhere cannot reach this server through DNS
+/// rebinding; the one write also needs a JSON body and, when the browser
+/// sends an Origin, our own, so another site cannot post to it.
+pub fn handle(dir: &Path, request: &Request, port: u16) -> Response {
     let allowed = [format!("127.0.0.1:{port}"), format!("localhost:{port}")];
-    if !host.is_some_and(|h| allowed.iter().any(|a| a.eq_ignore_ascii_case(h))) {
+    if !request
+        .host
+        .is_some_and(|h| allowed.iter().any(|a| a.eq_ignore_ascii_case(h)))
+    {
         return Response::error(403, "unexpected host");
     }
-    if method != "GET" {
-        return Response::error(405, "read-only: only GET is served");
-    }
+    let target = request.target;
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
+    if request.method == "POST" && path == "/api/folder" {
+        let same_origin = request.origin.is_none_or(|origin| {
+            allowed
+                .iter()
+                .any(|a| origin.eq_ignore_ascii_case(&format!("http://{a}")))
+        });
+        let json = request
+            .content_type
+            .is_some_and(|t| t.trim_start().starts_with("application/json"));
+        if !same_origin || !json {
+            return Response::error(403, "folder changes come only from this page");
+        }
+        let change: FolderChange = match serde_json::from_slice(request.body) {
+            Ok(change) => change,
+            Err(_) => return Response::error(400, "malformed folder change"),
+        };
+        if !change
+            .items
+            .iter()
+            .chain(&change.unfile)
+            .all(|i| is_item(i))
+        {
+            return Response::error(400, "items must be sha prefixes or #PRs");
+        }
+        let command = Command::Folder {
+            name: change.name,
+            items: change.items,
+            unfile: change.unfile,
+            rename: change.rename,
+            delete: change.delete,
+        };
+        return Response::json(200, commands::run(&command, dir).render(true));
+    }
+    if request.method != "GET" {
+        return Response::error(405, "only GET, and POST /api/folder, are served");
+    }
     let command = match path {
         "/" | "/index.html" => {
             return Response {
@@ -68,6 +135,7 @@ pub fn handle(dir: &Path, method: &str, target: &str, host: Option<&str>, port: 
             return Response::json(200, serde_json::json!({ "name": name }).to_string());
         }
         "/api/status" => Command::Status,
+        "/api/plan" => Command::Plan,
         "/api/inbox" => Command::Inbox {
             all: true,
             security: false,
@@ -115,7 +183,7 @@ pub fn serve(dir: &Path, port: u16, open: bool) -> std::io::Result<()> {
     let port = listener.local_addr()?.port();
     let url = format!("http://127.0.0.1:{port}/");
     let mut out = std::io::stdout().lock();
-    writeln!(out, "tether ui: {url}  (read-only; Ctrl+C to stop)")?;
+    writeln!(out, "tether ui: {url}  (Ctrl+C to stop)")?;
     out.flush()?;
     drop(out);
     if open {
@@ -136,21 +204,49 @@ fn connection(stream: TcpStream, dir: &Path, port: u16) -> std::io::Result<()> {
     let mut reader = BufReader::new((&stream).take(MAX_HEAD as u64));
     let mut request_line = String::new();
     reader.read_line(&mut request_line)?;
-    let mut host = None;
+    let (mut host, mut origin, mut content_type, mut length) = (None, None, None, 0usize);
     loop {
         let mut line = String::new();
         if reader.read_line(&mut line)? == 0 || line == "\r\n" || line == "\n" {
             break;
         }
-        if let Some((name, value)) = line.split_once(':')
-            && name.trim().eq_ignore_ascii_case("host")
-        {
-            host = Some(value.trim().to_string());
+        if let Some((name, value)) = line.split_once(':') {
+            let value = Some(value.trim().to_string());
+            match name.trim().to_ascii_lowercase().as_str() {
+                "host" => host = value,
+                "origin" => origin = value,
+                "content-type" => content_type = value,
+                "content-length" => {
+                    length = value.and_then(|v| v.parse().ok()).unwrap_or(0);
+                }
+                _ => {}
+            }
         }
     }
+    if length > MAX_BODY {
+        return Ok(());
+    }
+    // The head reader may have buffered the start of the body.
+    let mut body = reader.buffer().to_vec();
+    if body.len() < length {
+        let mut rest = Vec::new();
+        (&stream)
+            .take((length - body.len()) as u64)
+            .read_to_end(&mut rest)?;
+        body.extend(rest);
+    }
+    body.truncate(length);
     let mut parts = request_line.split_whitespace();
     let (method, target) = (parts.next().unwrap_or(""), parts.next().unwrap_or("/"));
-    let response = handle(dir, method, target, host.as_deref(), port);
+    let request = Request {
+        method,
+        target,
+        host: host.as_deref(),
+        origin: origin.as_deref(),
+        content_type: content_type.as_deref(),
+        body: &body,
+    };
+    let response = handle(dir, &request, port);
     let reason = match response.status {
         200 => "OK",
         400 => "Bad Request",

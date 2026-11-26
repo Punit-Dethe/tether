@@ -62,6 +62,14 @@ pub fn run(dir: &Path, all: bool, security: bool) -> Result<Report> {
             "merged": inbox.count(State::Merged),
             "ignored": inbox.count(State::Ignored),
         },
+        "folders": crate::folders::load(&fork.root)?
+            .folders
+            .iter()
+            .map(|folder| json!({
+                "name": folder.name,
+                "count": inbox.items.iter().filter(|i| i.folder.as_deref() == Some(folder.name.as_str())).count(),
+            }))
+            .collect::<Vec<_>>(),
         "items": items,
     });
     Ok(Report::success("inbox", summary, data))

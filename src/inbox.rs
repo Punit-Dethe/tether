@@ -54,12 +54,15 @@ pub struct Item {
     /// `Upstream-Commit:` trailer: probably applied by hand.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub applied_here: bool,
-    /// The first upstream release that ships it (`track = "releases"`).
+    /// The first upstream release that ships it (from fetched release tags).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub release: Option<String>,
     /// Why it looks like a security fix: GHSA/CVE ids, then keywords.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub security: Vec<String>,
+    /// The person's own folder for it (`tether folder`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub folder: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -89,10 +92,9 @@ pub fn build(git: &Git, root: &Path, config: &Config) -> Result<Inbox> {
     let tracked = crate::track::target(git, config)?;
     let target_ref = tracked.name.clone();
     let target = tracked.commit.clone();
-    let releases = match tracked.release {
-        Some(_) => crate::track::releases(git, config)?,
-        None => Vec::new(),
-    };
+    // Fetched release tags label each commit with the release that first
+    // shipped it, whether the fork tracks releases or the branch.
+    let releases = crate::track::releases(git, config)?;
     let point = syncpoint::sync_point(git, "HEAD")?;
     if !git.is_ancestor(&point.upstream, &target)? {
         return Err(Error::Refused(format!(
@@ -122,6 +124,7 @@ pub fn build(git: &Git, root: &Path, config: &Config) -> Result<Inbox> {
     };
     let absorbed: HashSet<String> = git.rev_list(&point.upstream)?.into_iter().collect();
     let decisions = decisions::load(root)?;
+    let folders = crate::folders::load(root)?;
     let applied = AppliedHere::scan(git, &point.upstream)?;
 
     // Releases mode: the branch past the newest release is tracked too.
@@ -174,6 +177,7 @@ pub fn build(git: &Git, root: &Path, config: &Config) -> Result<Inbox> {
             entry.applied_here = false;
         }
         entry.release = shipped_in.get(sha).cloned();
+        entry.folder = folders.of(sha).map(str::to_owned);
         let body = messages.get(sha).map_or("", String::as_str);
         entry.security = security_signals(subject, body, &config.security.keywords);
         items.push(entry);
@@ -182,7 +186,7 @@ pub fn build(git: &Git, root: &Path, config: &Config) -> Result<Inbox> {
     Ok(Inbox {
         sync_point: point,
         target,
-        release: (!releases.is_empty()).then(|| target_ref.clone()),
+        release: tracked.release.is_some().then(|| target_ref.clone()),
         unreleased: unreleased.len(),
         behind,
         items,
@@ -230,6 +234,7 @@ fn item(
         applied_here: state == State::Pending && applied.matches(sha, subject),
         release: None,
         security: Vec::new(),
+        folder: None,
     }
 }
 

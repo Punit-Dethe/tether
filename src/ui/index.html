@@ -55,6 +55,7 @@ header .sp{flex:1}
 .fetched{color:var(--tx3);font-size:12px}
 .btn{height:28px;padding:0 11px;border-radius:6px;border:1px solid var(--line2);display:inline-flex;align-items:center;gap:7px;color:var(--tx2);background:var(--panel)}
 .btn:hover{color:var(--tx);border-color:var(--tx3)}
+.btn{font-size:12.5px;font-weight:400;letter-spacing:-.005em}
 .btn.primary{background:var(--ac);color:var(--acon);border-color:var(--ac);font-weight:500}
 .btn.primary:hover{opacity:.9}
 .btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
@@ -186,6 +187,40 @@ pre .a{color:var(--ok)}pre .d{color:var(--bad)}pre .h{color:var(--info)}pre .f{c
 .toast.on{opacity:1;transform:translateX(-50%)}
 .err{padding:14px 16px;color:var(--bad)}
 .loading{color:var(--tx3);padding:40px 0;text-align:center}
+.sect.row2{display:flex;align-items:center;padding-right:4px}
+.sect.row2 .sp{flex:1}
+.mini{width:22px;height:22px;border-radius:5px;display:grid;place-items:center;color:var(--tx3)}
+.mini:hover{background:var(--hover);color:var(--tx)}
+.mini svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round}
+#folders a.drop,#newFolder.drop{background:var(--raise);color:var(--tx);outline:1px dashed var(--tx3);outline-offset:-1px}
+#folders .empty-f{padding:4px 8px;color:var(--tx3);font-size:12px}
+.fold svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linejoin:round}
+td.ck,th.ck{width:34px;padding:0 0 0 14px}
+input[type=checkbox]{accent-color:var(--tx);cursor:pointer;margin:0}
+tr.grp td{height:32px;background:var(--raise);font-size:12px;color:var(--tx2);cursor:default}
+tr.grp td b{color:var(--tx);font-weight:500;margin-right:8px}
+tr.sel{background:var(--hover)}
+tr[draggable=true]{cursor:grab}
+.selbar{display:flex;align-items:center;gap:8px;padding:8px 12px;margin-bottom:12px;border:1px solid var(--line2);border-radius:8px;background:var(--panel)}
+.selbar .sp{flex:1}
+select.btn{appearance:none;padding-right:11px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.seg button{height:26px;padding:0 10px;color:var(--tx2);border-left:1px solid var(--line)}
+.seg button:first-child{border-left:0}
+.seg button.on{background:var(--raise);color:var(--tx)}
+.steps{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;margin-bottom:22px}
+.step{padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+.step .k{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--tx2)}
+.step .lbl{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.step .n{font-size:22px;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.step .n span{font-size:12.5px;color:var(--tx3);font-weight:400;letter-spacing:0;margin-left:5px}
+.step .f{display:flex;gap:12px;font-size:12px;color:var(--tx3)}
+.step .f b{font-weight:500}
+.step code{margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.step.best{border-color:color-mix(in srgb,var(--ok) 45%,var(--line))}
+.files{color:var(--tx3);font-size:11.5px;font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px}
+h2.sec{font-size:14px;font-weight:600;margin:0 0 4px;letter-spacing:-.01em}
+.sec-lede{color:var(--tx3);margin:0 0 12px;font-size:12.5px}
 @media (max-width:1000px){.cols,.grid2{grid-template-columns:1fr}.hero{flex-direction:column}.preview{width:auto}.kpis{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
@@ -210,6 +245,8 @@ pre .a{color:var(--ok)}pre .d{color:var(--bad)}pre .h{color:var(--info)}pre .f{c
     <a href="#inbox/ports" data-v="inbox/ports"><span class="dot d-info"></span>Ports to review<span class="n" id="n-ports"></span></a>
     <a href="#inbox/applied" data-v="inbox/applied"><span class="dot d-mute"></span>Done by hand<span class="n" id="n-applied"></span></a>
   </nav>
+  <div class="sect row2">Folders<span class="sp"></span><button class="mini" id="newFolder" title="New folder (or drop commits here)"><svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></svg></button></div>
+  <nav id="folders"></nav>
   <div class="foot">
     <span id="ver">tether</span><span class="sp"></span>
     <button class="icon-btn" id="themeBtn" title="Switch theme"><svg viewBox="0 0 16 16"><path d="M13.5 9.5A5.5 5.5 0 0 1 6.5 2.5a5.5 5.5 0 1 0 7 7z"/></svg></button>
@@ -262,10 +299,24 @@ async function get(path){
 async function load(){
   $("#refresh").disabled=true;
   const [status,inbox,preview,map,info]=await Promise.all(["status","inbox","preview","map","info"].map(n=>get("/api/"+n)));
-  D={status,inbox,preview,map,info};loadedAt=Date.now();
+  D={status,inbox,preview,map,info,plan:null};loadedAt=Date.now();
   $("#refresh").disabled=false;
   chrome();route();
+  // The plan runs several merge previews; it fills in when ready.
+  const stamp=loadedAt;
+  get("/api/plan").then(plan=>{if(stamp!==loadedAt)return;D.plan=plan;chrome();route(true)});
 }
+async function reloadInbox(){D.inbox=await get("/api/inbox");chrome();route(true)}
+async function folderChange(change){
+  try{
+    const r=await fetch("/api/folder",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(change)});
+    const rep=await r.json();
+    if(!rep.ok){toast(rep.summary||rep.error||"Folder change failed");return false}
+    toast(rep.summary);await reloadInbox();return true;
+  }catch(e){toast("Folder change failed: "+e.message);return false}
+}
+function folderList(){return (D.inbox?.ok&&D.inbox.data?.folders)||[]}
+function easeOf(){const m=new Map();for(const c of (D.plan?.ok&&D.plan.data?.commits)||[])m.set(c.sha,c);return m}
 
 // derived facts
 function items(){return (D.inbox?.ok&&D.inbox.data?.items)||[]}
@@ -311,6 +362,8 @@ function chrome(){
   $("#nextLabel").textContent=next?next.command.split(" ").slice(0,3).join(" "):"Up to date";
   $("#nextBtn").title=next?("Copy: "+next.command+"\n"+next.why):"Nothing to do";
   $("#nextBtn").onclick=()=>next?copy(next.command):toast("Nothing to do");
+  const folders=folderList();
+  $("#folders").innerHTML=folders.map(fd=>`<a href="#inbox/${esc(encodeURIComponent("folder:"+fd.name))}" data-v="inbox/folder:${esc(fd.name)}" data-folder="${esc(fd.name)}" class="fold"><svg viewBox="0 0 16 16"><path d="M2 4.5V12a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1H8L6.5 3.5H3a1 1 0 0 0-1 1z"/></svg>${esc(fd.name)}<span class="n">${fd.count||""}</span></a>`).join("")||'<div class="empty-f">Drag commits onto + to start one.</div>';
   tick();
 }
 function tick(){if(loadedAt)$("#fetched").textContent="Loaded "+(Date.now()-loadedAt<60000?"just now":ago(new Date(loadedAt).toISOString()))}
@@ -318,21 +371,27 @@ setInterval(tick,30000);
 
 // router
 const titles={overview:"Overview",inbox:"Inbox",sync:"Sync",boundary:"Boundary",decisions:"Decisions"};
-function route(){
-  const h=location.hash.slice(1)||"overview";
-  const [v,sub]=h.split("/");
+function route(keepScroll){
+  const raw=location.hash.slice(1)||"overview";
+  const [v,subRaw]=raw.split("/");
+  let sub=subRaw;try{sub=subRaw&&decodeURIComponent(subRaw)}catch{}
+  const h=sub?v+"/"+sub:v;
   const view=titles[v]?v:"overview";
-  if(view==="inbox"&&sub)inboxFilter=sub;
+  if(view==="inbox")inboxFilter=sub||"pending";
+  if(view==="inbox"&&inboxFilter.startsWith("folder:")&&!folderList().some(fd=>"folder:"+fd.name===inboxFilter)){location.hash="#inbox";return}
+  const scroll=$(".scroll"),top=scroll.scrollTop;
   document.querySelectorAll("nav a").forEach(a=>a.classList.toggle("on",a.dataset.v===h||a.dataset.v===view));
   $("#crumb").textContent=titles[view];
   const err=["status","inbox"].map(k=>D[k]).find(r=>r&&!r.ok);
   const v2=$("#view");
   if(D.status&&D.status.data?.configured===false){v2.innerHTML=notSetUp();return}
   if(err){v2.innerHTML=`<div class="card err">${esc(err.summary)}</div>`;return}
+  const hadFocus=document.activeElement?.id==="q";
   v2.innerHTML={overview,inbox,sync,boundary,decisions}[view]();
-  if(view==="inbox"){const q=$("#q");q.value=query;q.oninput=()=>{query=q.value;renderInboxTable()};renderInboxTable()}
+  if(view==="inbox"){const q=$("#q");q.value=query;q.oninput=()=>{query=q.value;renderInboxTable()};renderInboxTable();if(hadFocus)q.focus()}
+  scroll.scrollTop=keepScroll?top:0;
 }
-addEventListener("hashchange",route);
+addEventListener("hashchange",()=>route());
 function notSetUp(){return `<h1>Not set up</h1><p class="lede">${esc(D.status.summary)}</p><div class="card callout"><div class="w">Run this in the repository</div><code class="cmd copy" data-copy="tether init">tether init</code></div>`}
 
 function tagsFor(i){
@@ -385,7 +444,7 @@ function overview(){
         <div><span class="dot d-ok"></span>Resolve themselves<b>${f.owned.length}</b></div>
         <div><span class="dot d-warn"></span>Need you<b>${f.conflicts.length}</b></div>
       </div>
-      <div class="cmd"><span>Dry run, no fetch.</span><a href="#sync" style="margin-left:auto">Details</a></div>`
+      <div class="cmd"><span>${(()=>{const c=D.plan?.ok&&D.plan.data.steps?.find(s=>s.kind==="clean");return D.plan?(c?`<b style="color:var(--ok)">${c.commits}</b> commits sync with no conflict`:"No conflict-free step"):"Planning steps…"})()}</span><a href="#sync" style="margin-left:auto">Plan</a></div>`
       :`<div class="summary faint">${esc(D.preview?.summary||"No preview.")}</div>`}
     </div>
   </div>
@@ -423,27 +482,133 @@ function overview(){
   </div>`;
 }
 
+// inbox: filters, grouping, selection, folders
+let groupBy=localStorage.getItem("tether-group")||"none";
+const selected=new Set();
+const EASE={clean:["d-ok","Clean","touches nothing you changed"],owned:["d-ok","Owned","only your owned areas; resolves itself"],overlap:["d-info","Overlaps","touches files you changed; merges cleanly"],conflict:["d-warn","Conflicts","touches a file the sync conflicts on"]};
 function inbox(){
   const all=items(),f=facts();
   const c={pending:f.pend.length,security:f.security.length,ports:f.ports.length,applied:f.applied.length,merged:all.filter(i=>i.state==="merged").length,ignored:all.filter(i=>i.state==="ignored").length,all:all.length};
   const chip=(k,l)=>`<a class="chip ${inboxFilter===k?"on":""}" href="#inbox/${k}">${l}<span class="c">${c[k]}</span></a>`;
-  return `<h1>Inbox</h1><p class="lede">${esc(D.inbox.summary)}</p>
-  <div class="toolbar">${chip("pending","Pending")}${chip("security","Security")}${chip("ports","Ports")}${chip("applied","Done by hand")}${chip("merged","Merged")}${chip("ignored","Ignored")}${chip("all","All")}
-  <input class="filter" id="q" placeholder="Filter by subject, sha or #PR" autocomplete="off"></div>
-  <div class="card panel"><table><thead><tr><th>Ref</th><th>Subject</th><th>Tags</th><th>State</th><th class="num">Date</th></tr></thead><tbody id="tbody"></tbody></table><div id="tempty"></div></div>`;
+  const folder=inboxFilter.startsWith("folder:")?inboxFilter.slice(7):null;
+  const seg=(k,l)=>`<button data-group="${k}" class="${groupBy===k?"on":""}">${l}</button>`;
+  const head=folder
+    ?`<h1 style="display:flex;align-items:center;gap:10px">${esc(folder)}<span class="sp" style="flex:1"></span><button class="btn" data-frename="${esc(folder)}">Rename</button><button class="btn" data-fdelete="${esc(folder)}">Delete folder</button></h1><p class="lede">Your folder. It only groups commits for reading; deleting it leaves the commits as they are.</p>`
+    :`<h1>Inbox</h1><p class="lede">${esc(D.inbox.summary)}</p>`;
+  return `${head}
+  <div class="toolbar">${folder?`<a class="chip" href="#inbox">← All pending</a>`:chip("pending","Pending")+chip("security","Security")+chip("ports","Ports")+chip("applied","Done by hand")+chip("merged","Merged")+chip("ignored","Ignored")+chip("all","All")}
+  <span class="seg" title="Group rows">${seg("none","List")}${seg("release","Release")}${seg("folder","Folder")}${seg("ease","Ease")}</span>
+  <input class="filter" id="q" placeholder="Filter by subject, sha or #PR" autocomplete="off" style="margin-left:0"></div>
+  <div id="selbar"></div>
+  <div class="card panel"><table><thead><tr><th class="ck"><input type="checkbox" id="ckall" title="Select all shown"></th><th>Ref</th><th>Subject</th><th>Tags</th><th>State</th><th class="num">Date</th></tr></thead><tbody id="tbody"></tbody></table><div id="tempty"></div></div>`;
+}
+function inboxList(){
+  const f=facts(),q=query.trim().toLowerCase();
+  let list;
+  if(inboxFilter.startsWith("folder:")){const n=inboxFilter.slice(7);list=items().filter(i=>i.folder===n)}
+  else list={security:f.security,ports:f.ports,applied:f.applied}[inboxFilter]||items().filter(i=>inboxFilter==="all"||i.state===inboxFilter);
+  if(q)list=list.filter(i=>(i.subject+" "+i.sha+" #"+(i.pr||"")+" "+(i.release||"")+" "+(i.folder||"")).toLowerCase().includes(q));
+  return list;
+}
+function rowHtml(i,ease){
+  const e=ease.get(i.sha);
+  const extra=[i.release&&groupBy!=="release"?`<span class="pill">${esc(i.release)}</span>`:"",i.folder&&groupBy!=="folder"&&!inboxFilter.startsWith("folder:")?`<span class="pill"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 4.5V12a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1H8L6.5 3.5H3a1 1 0 0 0-1 1z"/></svg>${esc(i.folder)}</span>`:"",e&&groupBy!=="ease"&&i.state==="pending"?`<span class="dot ${EASE[e.ease][0]}" title="${esc(EASE[e.ease][1]+": "+EASE[e.ease][2])}"></span>`:""].join("");
+  return `<tr data-item="${esc(i.sha)}" draggable="true" class="${selected.has(i.sha)?"sel":""}"><td class="ck"><input type="checkbox" data-sel="${esc(i.sha)}" ${selected.has(i.sha)?"checked":""}></td><td class="mono faint">${esc(i.pr?"#"+i.pr:short(i.sha))}</td><td class="t" title="${esc(i.subject)}">${esc(i.subject)}${i.note?` <span class="faint">· ${esc(i.note)}</span>`:""}</td><td>${tagsFor(i)}${extra}</td><td>${statePill(i.state)}</td><td class="num faint">${esc(ago(i.date))}</td></tr>`;
 }
 function renderInboxTable(){
-  const f=facts(),q=query.trim().toLowerCase();
-  let list={security:f.security,ports:f.ports,applied:f.applied}[inboxFilter]||items().filter(i=>inboxFilter==="all"||i.state===inboxFilter);
-  if(q)list=list.filter(i=>(i.subject+" "+i.sha+" #"+(i.pr||"")).toLowerCase().includes(q));
-  $("#tbody").innerHTML=list.slice(0,400).map(i=>`<tr data-item="${esc(i.sha)}"><td class="mono faint">${esc(i.pr?"#"+i.pr:short(i.sha))}</td><td class="t" title="${esc(i.subject)}">${esc(i.subject)}${i.note?` <span class="faint">· ${esc(i.note)}</span>`:""}</td><td>${tagsFor(i)}</td><td>${statePill(i.state)}</td><td class="num faint">${esc(ago(i.date))}</td></tr>`).join("");
+  const list=inboxList(),ease=easeOf();
+  const shown=list.slice(0,400);
+  let html="";
+  if(groupBy==="none")html=shown.map(i=>rowHtml(i,ease)).join("");
+  else{
+    const key={release:i=>i.release||(i.state==="pending"?"Not in a release yet":"No release"),folder:i=>i.folder||"Not in a folder",ease:i=>ease.get(i.sha)?.ease||"—"}[groupBy];
+    const groups=new Map();
+    for(const i of shown){const k=key(i);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(i)}
+    let order=[...groups.keys()];
+    if(groupBy==="ease")order=["clean","owned","overlap","conflict","—"].filter(k=>groups.has(k));
+    if(groupBy==="folder")order.sort((a,b)=>(a==="Not in a folder")-(b==="Not in a folder")||a.localeCompare(b));
+    const label=k=>groupBy==="ease"&&EASE[k]?`<span class="dot ${EASE[k][0]}" style="margin-right:7px"></span><b>${EASE[k][1]}</b>${esc(EASE[k][2])}`:`<b>${esc(k)}</b>`;
+    html=order.map(k=>`<tr class="grp"><td colspan="6">${label(k)} <span class="faint">${groups.get(k).length}</span></td></tr>`+groups.get(k).map(i=>rowHtml(i,ease)).join("")).join("");
+    if(groupBy==="ease"&&!D.plan)html=`<tr class="grp"><td colspan="6">Rating commits… (running merge previews)</td></tr>`+shown.map(i=>rowHtml(i,ease)).join("");
+  }
+  $("#tbody").innerHTML=html;
   $("#tempty").innerHTML=list.length?(list.length>400?`<div class="more">${list.length-400} more; narrow the filter</div>`:""):'<div class="empty">No commits here.</div>';
+  const ck=$("#ckall");ck.checked=shown.length>0&&shown.every(i=>selected.has(i.sha));
+  ck.onchange=()=>{for(const i of shown)ck.checked?selected.add(i.sha):selected.delete(i.sha);renderInboxTable()};
+  renderSelbar();
 }
+function renderSelbar(){
+  const bar=$("#selbar");if(!bar)return;
+  if(!selected.size){bar.innerHTML="";return}
+  const folders=folderList();
+  bar.innerHTML=`<div class="selbar"><b>${selected.size} selected</b><span class="faint">Drag them onto a folder, or</span>
+    <select class="btn" id="moveTo"><option value="">Move to folder…</option>${folders.map(fd=>`<option value="${esc(fd.name)}">${esc(fd.name)}</option>`).join("")}<option value="__new">New folder…</option></select>
+    <button class="btn" id="unfileSel">Remove from folder</button><span class="sp"></span><button class="btn" id="clearSel">Clear</button></div>`;
+  $("#moveTo").onchange=async e=>{let n=e.target.value;if(!n)return;if(n==="__new"){n=prompt("New folder name");if(!n){e.target.value="";return}}if(await folderChange({name:n,items:[...selected]}))selected.clear(),renderSelbar()};
+  $("#unfileSel").onclick=async()=>{if(await folderChange({unfile:[...selected]}))selected.clear(),renderSelbar()};
+  $("#clearSel").onclick=()=>{selected.clear();renderInboxTable()};
+}
+document.addEventListener("change",e=>{const s=e.target.closest?.("[data-sel]");if(!s)return;s.checked?selected.add(s.dataset.sel):selected.delete(s.dataset.sel);s.closest("tr").classList.toggle("sel",s.checked);renderSelbar();const ck=$("#ckall");if(ck&&!s.checked)ck.checked=false});
+document.addEventListener("click",async e=>{
+  const g=e.target.closest("[data-group]");if(g){groupBy=g.dataset.group;localStorage.setItem("tether-group",groupBy);route(true);return}
+  const rn=e.target.closest("[data-frename]");if(rn){const to=prompt("Rename folder",rn.dataset.frename);if(to&&to!==rn.dataset.frename&&await folderChange({name:rn.dataset.frename,rename:to}))location.hash="#inbox/"+encodeURIComponent("folder:"+to.trim());return}
+  const dl=e.target.closest("[data-fdelete]");if(dl){if(confirm(`Delete the folder “${dl.dataset.fdelete}”? Its commits stay in the inbox.`)&&await folderChange({name:dl.dataset.fdelete,delete:true}))location.hash="#inbox";return}
+},true);
+// drag and drop onto folders
+let dragShas=[];
+document.addEventListener("dragstart",e=>{const tr=e.target.closest?.("tr[data-item]");if(!tr)return;const sha=tr.dataset.item;dragShas=selected.has(sha)?[...selected]:[sha];e.dataTransfer.setData("text/plain",dragShas.join(" "));e.dataTransfer.effectAllowed="move"});
+function dropTarget(e){return e.target.closest?.("#folders a[data-folder], #newFolder")}
+document.addEventListener("dragover",e=>{const t=dropTarget(e);if(t&&dragShas.length){e.preventDefault();e.dataTransfer.dropEffect="move";t.classList.add("drop")}});
+document.addEventListener("dragleave",e=>{const t=dropTarget(e);if(t&&!t.contains(e.relatedTarget))t.classList.remove("drop")});
+document.addEventListener("dragend",()=>{dragShas=[];document.querySelectorAll(".drop").forEach(x=>x.classList.remove("drop"))});
+document.addEventListener("drop",async e=>{
+  const t=dropTarget(e);if(!t||!dragShas.length)return;e.preventDefault();t.classList.remove("drop");
+  const shas=dragShas;dragShas=[];
+  let name=t.dataset.folder;
+  if(!name){name=prompt(`New folder for ${plural(shas.length,"commit")}`);if(!name)return}
+  if(await folderChange({name,items:shas})){for(const s of shas)selected.delete(s);renderSelbar()}
+});
+$("#newFolder").onclick=async()=>{
+  const shas=[...selected];
+  const name=prompt(shas.length?`New folder for ${plural(shas.length,"selected commit")}`:"New folder name (then drag commits onto it)");
+  if(!name)return;
+  if(await folderChange({name,items:shas})){selected.clear();location.hash="#inbox/"+encodeURIComponent("folder:"+name.trim())}
+};
 
+function planSection(){
+  const p=D.plan;
+  if(!p)return `<div class="card callout"><div class="w"><b>Planning…</b><div>Previewing merges along upstream's history to find the furthest step with no conflict.</div></div></div>`;
+  if(!p.ok)return `<div class="card err">${esc(p.summary)}</div>`;
+  const d=p.data,steps=d.steps||[],behind=d.behind||0;
+  if(!behind)return `<div class="card callout"><div class="w"><b>Up to date</b><div>${esc(p.summary)}</div></div></div>`;
+  const byIdx=Object.fromEntries(items().map(i=>[i.sha,i]));
+  const kindLabel={clean:["d-ok","Conflict-free step"],release:["d-info","Release"],tip:["d-mute","Everything"]};
+  const cmdFor=s=>s.kind==="tip"?"tether sync":`tether sync --target ${s.commit.slice(0,12)}`;
+  const stepCard=s=>{const [dot,k]=kindLabel[s.kind]||["d-mute",s.kind];const best=s.kind==="clean";
+    return `<div class="card step ${best?"best":""}"><div class="k"><span class="dot ${dot}"></span>${k}${s.kind==="release"?` <b class="mono" style="color:var(--tx)">${esc(s.label)}</b>`:""}</div>
+    ${s.kind!=="release"?`<div class="lbl" title="${esc(s.label)}">${esc(s.label)}</div>`:""}
+    <div class="n">${s.commits}<span>of ${behind} commits</span></div>
+    <div class="track"><i style="width:${Math.max(2,s.commits/behind*100)}%;background:${best?"var(--ok)":"var(--tx3)"}"></i></div>
+    <div class="f"><span><b style="color:${s.conflicts.length?"var(--warn)":"var(--ok)"}">${s.conflicts.length}</b> need you</span><span><b>${s.owned}</b> resolve themselves</span></div>
+    <code class="cmd copy" data-copy="${esc(cmdFor(s))}" title="Copy">${esc(cmdFor(s))}</code></div>`};
+  const ease=d.ease||{},commits=d.commits||[];
+  const lists=["clean","owned","overlap","conflict"].map(k=>{
+    const rows=commits.filter(c=>c.ease===k).map(c=>({c,i:byIdx[c.sha]})).filter(x=>x.i);
+    if(!rows.length)return "";
+    const limit=k==="conflict"?6:8;
+    return `<div class="group"><div class="gh"><span class="dot ${EASE[k][0]}"></span>${EASE[k][1]}<span class="c">${rows.length}</span><span class="faint" style="margin-left:6px">${esc(EASE[k][2])}</span></div>${rows.slice(0,limit).map(({c,i})=>`<div class="row" data-item="${esc(i.sha)}"><span class="ref mono">${esc(i.pr?"#"+i.pr:short(i.sha))}</span><span class="t">${esc(i.subject)}</span>${c.files?.length?`<span class="files" title="${esc(c.files.join("\n"))}">${esc(c.files[0])}${c.files.length>1?` +${c.files.length-1}`:""}</span>`:""}${i.release?`<span class="pill">${esc(i.release)}</span>`:""}<span class="m">${esc(ago(i.date))}</span></div>`).join("")}${rows.length>limit?`<a class="more" style="display:block" href="#inbox/pending" data-groupto="ease">${rows.length-limit} more in the inbox, grouped by ease</a>`:""}</div>`}).join("");
+  return `<div class="card callout"><span class="dot ${steps.some(s=>s.kind==="clean")?"d-ok":"d-warn"}"></span><div class="w"><b>${esc(p.summary)}</b>${p.next?`<div>${esc(p.next.why)}</div>`:""}</div>${p.next?`<code class="cmd copy" data-copy="${esc(p.next.command)}">${esc(p.next.command)}</code>`:""}</div>
+  <h2 class="sec">Steps you can sync to</h2><p class="sec-lede">Each is a dry run: how many upstream commits it brings in and how many files would need you. Sync to one, then plan again.</p>
+  <div class="steps">${steps.map(stepCard).join("")}</div>
+  <h2 class="sec">Easiest first</h2><p class="sec-lede">Pending commits rated by what they touch in your fork. <span class="dot d-ok"></span> clean ${ease.clean||0} · owned ${ease.owned||0} &nbsp;<span class="dot d-info"></span> overlaps ${ease.overlap||0} &nbsp;<span class="dot d-warn"></span> conflicts ${ease.conflict||0}</p>
+  <div class="card panel" style="margin-bottom:22px">${lists||'<div class="empty">No pending commits.</div>'}</div>`;
+}
+document.addEventListener("click",e=>{const a=e.target.closest("[data-groupto]");if(a){groupBy=a.dataset.groupto;localStorage.setItem("tether-group",groupBy)}},true);
 function sync(){
   const f=facts(),st=f.st,pv=D.preview;
-  return `<h1>Sync</h1><p class="lede">${esc(pv?.summary||"")}</p>
-  <div class="card callout"><div class="w"><b>Phase: ${esc(st.phase||"unknown")}</b><div>${esc(D.status.summary)}</div></div>${D.status.next?`<code class="cmd copy" data-copy="${esc(D.status.next.command)}" title="${esc(D.status.next.why)}">${esc(D.status.next.command)}</code>`:""}</div>
+  return `<h1>Sync</h1><p class="lede">Phase: ${esc(st.phase||"unknown")}. ${esc(D.status.summary)}</p>
+  ${planSection()}
+  <h2 class="sec">If you sync everything</h2><p class="sec-lede">${esc(pv?.summary||"")}</p>
   ${f.pv?`<div class="grid2">
     <div class="card panel list"><div class="ph"><span class="dot d-warn"></span><h3>Need you</h3><span class="sp"></span><span class="faint">${f.conflicts.length}</span></div>${f.conflicts.map(p=>`<div class="li"><span class="mono">${esc(p)}</span></div>`).join("")||'<div class="empty">No conflicts.</div>'}</div>
     <div class="card panel list"><div class="ph"><span class="dot d-ok"></span><h3>Resolve themselves</h3><span class="sp"></span><span class="faint">${f.owned.length}</span></div>${f.owned.map(p=>`<div class="li"><span class="mono">${esc(p)}</span><span class="pill ok">owned</span></div>`).join("")||'<div class="empty">None.</div>'}</div>
@@ -484,7 +649,7 @@ function decisions(){
 }
 
 // packet drawer
-document.addEventListener("click",e=>{const r=e.target.closest("[data-item]");if(r)openPacket(r.dataset.item)});
+document.addEventListener("click",e=>{if(e.target.closest("input,select,button,a,[data-copy]"))return;const r=e.target.closest("[data-item]");if(r)openPacket(r.dataset.item)});
 function closeDrawer(){$("#drawer").classList.remove("on");$("#scrim").classList.remove("on")}
 $("#scrim").onclick=closeDrawer;$("#dclose").onclick=closeDrawer;
 async function openPacket(sha){

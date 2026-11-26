@@ -47,6 +47,28 @@ pub enum Command {
         #[arg(long)]
         security: bool,
     },
+    /// What to sync: the furthest conflict-free step, each release, and the
+    /// pending commits from easiest to hardest. Changes nothing.
+    Plan,
+    /// Group upstream commits into folders of your own (reading aid only).
+    ///
+    ///   folder                          list folders
+    ///   folder <name> [<item>…]         file commits into it (creates it)
+    ///   folder --unfile <item>…         take commits out of their folder
+    ///   folder <name> --rename <new>    rename it
+    ///   folder <name> --delete          delete it (its commits stay)
+    #[command(verbatim_doc_comment)]
+    Folder {
+        name: Option<String>,
+        /// Commits to file (sha prefix or #PR).
+        items: Vec<String>,
+        #[arg(long, num_args = 1.., conflicts_with_all = ["name", "rename", "delete"], value_name = "ITEM")]
+        unfile: Vec<String>,
+        #[arg(long, value_name = "NEW", conflicts_with = "items")]
+        rename: Option<String>,
+        #[arg(long, conflicts_with = "items")]
+        delete: bool,
+    },
     /// A self-contained work packet for one upstream item.
     Packet { item: String },
     /// Bring upstream in as one squashed sync commit.
@@ -184,6 +206,8 @@ impl Command {
             Command::Init { .. } => "init",
             Command::Status => "status",
             Command::Inbox { .. } => "inbox",
+            Command::Plan => "plan",
+            Command::Folder { .. } => "folder",
             Command::Packet { .. } => "packet",
             Command::Sync { .. } => "sync",
             Command::Decide { .. } => "decide",
