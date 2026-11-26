@@ -134,6 +134,14 @@ header .sp{flex:1}
 .chip{height:26px;padding:0 10px;border-radius:13px;border:1px solid var(--line);color:var(--tx2);display:inline-flex;align-items:center;gap:6px}
 .chip:hover{border-color:var(--line2);color:var(--tx)}
 .chip.on{background:var(--raise);border-color:var(--line2);color:var(--tx)}
+.tabs{display:flex;gap:2px;padding:2px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.tabs a{height:26px;padding:0 12px;border-radius:6px;color:var(--tx2);display:inline-flex;align-items:center;gap:7px}
+.tabs a:hover{color:var(--tx)}
+.tabs a.on{background:var(--raise);color:var(--tx);box-shadow:inset 0 0 0 1px var(--line2)}
+.tabs .c{color:var(--tx3);font-variant-numeric:tabular-nums;font-size:12px}
+.pick{height:32px;padding:0 28px 0 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--tx2);font:inherit;cursor:pointer;appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--tx3) 50%),linear-gradient(135deg,var(--tx3) 50%,transparent 50%);background-position:calc(100% - 14px) 50%,calc(100% - 10px) 50%;background-size:4px 4px;background-repeat:no-repeat}
+.pick:hover,.pick.on{color:var(--tx);border-color:var(--line2)}
+.pick option{background:var(--panel);color:var(--tx)}
 .chip .c{color:var(--tx3);font-variant-numeric:tabular-nums}
 .filter{margin-left:auto;height:28px;width:260px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--tx);padding:0 10px;font:inherit;outline:none}
 .filter:focus{border-color:var(--tx3)}
@@ -249,8 +257,7 @@ h2.sec{font-size:14px;font-weight:600;margin:0 0 4px;letter-spacing:-.01em}
   <nav id="folders"></nav>
   <div class="foot">
     <span id="ver">tether</span><span class="sp"></span>
-    <button class="icon-btn" id="themeBtn" title="Switch theme"><svg viewBox="0 0 16 16"><path d="M13.5 9.5A5.5 5.5 0 0 1 6.5 2.5a5.5 5.5 0 1 0 7 7z"/></svg></button>
-    <button class="icon-btn" disabled title="Settings: coming later"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2"/><path d="M8 1.8v1.7M8 12.5v1.7M1.8 8h1.7M12.5 8h1.7M3.6 3.6l1.2 1.2M11.2 11.2l1.2 1.2M3.6 12.4l1.2-1.2M11.2 4.8l1.2-1.2"/></svg></button>
+    <button class="icon-btn" id="themeBtn"></button>
   </div>
 </aside>
 <main>
@@ -278,7 +285,12 @@ let D={},loadedAt=0,inboxFilter="pending",query="";
 const savedTheme=localStorage.getItem("tether-theme");
 if(savedTheme)document.documentElement.dataset.theme=savedTheme;
 else if(matchMedia("(prefers-color-scheme: light)").matches)document.documentElement.dataset.theme="light";
-$("#themeBtn").onclick=()=>{const t=document.documentElement.dataset.theme==="dark"?"light":"dark";document.documentElement.dataset.theme=t;localStorage.setItem("tether-theme",t)};
+// One button: it shows the theme you would switch to.
+const SUN='<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1 1M11.6 11.6l1 1M3.4 12.6l1-1M11.6 4.4l1-1"/></svg>';
+const MOON='<svg viewBox="0 0 16 16"><path d="M13.5 9.5A5.5 5.5 0 0 1 6.5 2.5a5.5 5.5 0 1 0 7 7z"/></svg>';
+function themeIcon(){const dark=document.documentElement.dataset.theme==="dark";const b=$("#themeBtn");b.innerHTML=dark?SUN:MOON;b.title=dark?"Switch to light mode":"Switch to dark mode"}
+themeIcon();
+$("#themeBtn").onclick=()=>{const t=document.documentElement.dataset.theme==="dark"?"light":"dark";document.documentElement.dataset.theme=t;localStorage.setItem("tether-theme",t);themeIcon()};
 if(/Mac/.test(navigator.platform))$("#kmod").textContent="⌘K";
 
 function ago(iso){
@@ -388,7 +400,10 @@ function route(keepScroll){
   if(err){v2.innerHTML=`<div class="card err">${esc(err.summary)}</div>`;return}
   const hadFocus=document.activeElement?.id==="q";
   v2.innerHTML={overview,inbox,sync,boundary,decisions}[view]();
-  if(view==="inbox"){const q=$("#q");q.value=query;q.oninput=()=>{query=q.value;renderInboxTable()};renderInboxTable();if(hadFocus)q.focus()}
+  if(view==="inbox"){
+    const more=$("#more");if(more)more.onchange=()=>{location.hash="#inbox/"+(more.value||"pending")};
+    $("#grp").onchange=e=>{groupBy=e.target.value;localStorage.setItem("tether-group",groupBy);route(true)};
+    const q=$("#q");q.value=query;q.oninput=()=>{query=q.value;renderInboxTable()};renderInboxTable();if(hadFocus)q.focus()}
   scroll.scrollTop=keepScroll?top:0;
 }
 addEventListener("hashchange",()=>route());
@@ -485,20 +500,23 @@ function overview(){
 // inbox: filters, grouping, selection, folders
 let groupBy=localStorage.getItem("tether-group")||"none";
 const selected=new Set();
+const MORE=[["ports","Ports to review"],["applied","Done by hand"],["merged","Merged"],["ignored","Ignored"]];
+const GROUPS=[["none","No grouping"],["release","By release"],["folder","By folder"],["ease","By ease"]];
 const EASE={clean:["d-ok","Clean","touches nothing you changed"],owned:["d-ok","Owned","only your owned areas; resolves itself"],overlap:["d-info","Overlaps","touches files you changed; merges cleanly"],conflict:["d-warn","Conflicts","touches a file the sync conflicts on"]};
 function inbox(){
   const all=items(),f=facts();
   const c={pending:f.pend.length,security:f.security.length,ports:f.ports.length,applied:f.applied.length,merged:all.filter(i=>i.state==="merged").length,ignored:all.filter(i=>i.state==="ignored").length,all:all.length};
-  const chip=(k,l)=>`<a class="chip ${inboxFilter===k?"on":""}" href="#inbox/${k}">${l}<span class="c">${c[k]}</span></a>`;
+  const tab=(k,l)=>`<a class="${inboxFilter===k?"on":""}" href="#inbox/${k}">${l}<span class="c">${c[k]}</span></a>`;
   const folder=inboxFilter.startsWith("folder:")?inboxFilter.slice(7):null;
-  const seg=(k,l)=>`<button data-group="${k}" class="${groupBy===k?"on":""}">${l}</button>`;
   const head=folder
     ?`<h1 style="display:flex;align-items:center;gap:10px">${esc(folder)}<span class="sp" style="flex:1"></span><button class="btn" data-frename="${esc(folder)}">Rename</button><button class="btn" data-fdelete="${esc(folder)}">Delete folder</button></h1><p class="lede">Your folder. It only groups commits for reading; deleting it leaves the commits as they are.</p>`
     :`<h1>Inbox</h1><p class="lede">${esc(D.inbox.summary)}</p>`;
   return `${head}
-  <div class="toolbar">${folder?`<a class="chip" href="#inbox">← All pending</a>`:chip("pending","Pending")+chip("security","Security")+chip("ports","Ports")+chip("applied","Done by hand")+chip("merged","Merged")+chip("ignored","Ignored")+chip("all","All")}
-  <span class="seg" title="Group rows">${seg("none","List")}${seg("release","Release")}${seg("folder","Folder")}${seg("ease","Ease")}</span>
-  <input class="filter" id="q" placeholder="Filter by subject, sha or #PR" autocomplete="off" style="margin-left:0"></div>
+  <div class="toolbar">${folder?`<a class="chip" href="#inbox">← All pending</a>`:`<nav class="tabs">${tab("pending","Pending")}${tab("security","Security")}${tab("all","All")}</nav>
+    <select class="pick ${MORE.some(([k])=>k===inboxFilter)?"on":""}" id="more" title="Other lists"><option value="">More</option>${MORE.map(([k,l])=>`<option value="${k}" ${inboxFilter===k?"selected":""}>${l} (${c[k]})</option>`).join("")}</select>`}
+    <span class="sp" style="flex:1"></span>
+    <input class="filter" id="q" placeholder="Filter by subject, sha or #PR" autocomplete="off" style="margin-left:0">
+    <select class="pick" id="grp" title="Group rows">${GROUPS.map(([k,l])=>`<option value="${k}" ${groupBy===k?"selected":""}>${l}</option>`).join("")}</select></div>
   <div id="selbar"></div>
   <div class="card panel"><table><thead><tr><th class="ck"><input type="checkbox" id="ckall" title="Select all shown"></th><th>Ref</th><th>Subject</th><th>Tags</th><th>State</th><th class="num">Date</th></tr></thead><tbody id="tbody"></tbody></table><div id="tempty"></div></div>`;
 }
