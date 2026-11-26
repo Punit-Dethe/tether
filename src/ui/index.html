@@ -241,6 +241,7 @@ td .pill+.pill,td .pill+.tag,td .tag+.pill{margin-left:5px}
 .chg .mono{flex:none;color:var(--tx3)}
 .chg .t{flex:1;min-width:0}
 .chg .near{display:block;color:var(--tx3);font-family:var(--mono);font-size:11px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.side .li .mono{direction:rtl;text-align:left}
 .uses td{white-space:normal;height:auto;padding:8px 12px;word-break:break-word}
 .notes{display:flex;flex-direction:column;gap:6px;font-size:12.5px;color:var(--tx2)}
 .notes div{display:flex;gap:8px;align-items:baseline}
@@ -341,7 +342,7 @@ async function load(){
   D={status,inbox,preview,map,info,mainStatus,plan:null,deps:D.deps};loadedAt=Date.now();
   $("#refresh").disabled=false;
   chrome();route();
-  if(!D.deps)get("/api/deps").then(deps=>{D.deps=deps;chrome();if(location.hash.startsWith("#libraries"))route(true)});
+  if(!D.deps)get("/api/deps").then(deps=>{D.deps=deps;chrome();if(/^#librar/.test(location.hash))route(true)});
   // The plan runs several merge previews; it fills in when ready.
   const stamp=loadedAt;
   get("/api/plan").then(plan=>{if(stamp!==loadedAt)return;D.plan=plan;chrome();route(true)});
@@ -423,7 +424,7 @@ function tick(){if(loadedAt)$("#fetched").textContent="Loaded "+(Date.now()-load
 setInterval(tick,30000);
 
 // router
-const titles={overview:"Overview",inbox:"Inbox",sync:"Sync",boundary:"Boundary",decisions:"Decisions",libraries:"Libraries"};
+const titles={overview:"Overview",inbox:"Inbox",sync:"Sync",boundary:"Boundary",decisions:"Decisions",libraries:"Libraries",library:"Library"};
 function route(keepScroll){
   const raw=location.hash.slice(1)||"overview";
   const [v,subRaw]=raw.split("/");
@@ -438,6 +439,7 @@ function route(keepScroll){
   const err=["status","inbox"].map(k=>D[k]).find(r=>r&&!r.ok);
   const v2=$("#view");
   // Libraries are the repository's, whichever upstream is shown or set up.
+  if(view==="library"){if(sub!==libShown){libShown=sub;libTab="look"}document.querySelector("#nav a[data-v=libraries]").classList.add("on");$("#crumb").textContent=sub;v2.innerHTML=library(sub);bindLibrary(sub);scroll.scrollTop=keepScroll?top:0;return}
   if(view==="libraries"){libFilter=sub||"all";v2.innerHTML=libraries();bindLibraries();scroll.scrollTop=keepScroll?top:0;return}
   if(D.status&&D.status.data?.configured===false){v2.innerHTML=notSetUp();return}
   if(err){v2.innerHTML=`<div class="card err">${esc(err.summary)}</div>`;return}
@@ -792,49 +794,111 @@ function bindLibraries(){
   const b=$("#libFetch");if(b)b.onclick=async()=>{libBusy=true;route(true);const r=await get("/api/deps?fetch=1");libBusy=false;if(r.ok||!D.deps?.ok)D.deps=r;else toast(r.summary);chrome();route(true)};
   renderLibTable();
 }
-async function openLibrary(name){
-  const l=libFacts()?.libs.find(x=>x.name===name);if(!l)return;
-  const un=libFacts().upName;
-  $("#dsha").textContent="library";
-  $("#drawer").classList.add("on");$("#scrim").classList.add("on");
-  $("#dbody").innerHTML=libBody(l,un,null);
-  // Every upstream change, not just the notable ones (from the cache).
-  if(l.fork){const r=await get("/api/deps?name="+encodeURIComponent(name));const full=r.ok&&r.data.libraries?.[0];if(full&&$("#drawer").classList.contains("on"))$("#dbody").innerHTML=libBody(l,un,full.fork?.changes||null)}
+
+// one library's page: #library/<name>
+let libTab="look",libBusyOne=false,libShown=null;
+const libFull={}; // name -> full report entry; null while loading
+const linkTo=(u,t,cls="")=>u?`<a class="${cls}" href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(t)}</a>`:`<span class="${cls}">${esc(t)}</span>`;
+const when=ts=>ago(new Date(ts*1000).toISOString());
+function libNotes(l,un){
+  const f=l.fork,n=[];
+  if(l.whose==="upstream")n.push(["d-mute",`Maintained by ${esc(l.maintained_by||un)}: the project you forked uses it too, so keeping it current is its job.`]);
+  if(l.whose==="other")n.push(["d-mute","Someone else's library. tether only checks how it is pinned."]);
+  if(l.problem)n.push(["d-warn",esc(l.problem)]);
+  if(l.flags?.includes("unpinned"))n.push(["d-warn","No pin: every lockfile refresh builds whatever the default branch is then."]);
+  if(l.flags?.includes("floating"))n.push(["d-mute","Follows a branch, not a fixed commit."]);
+  if(l.tip)n.push([l.tip.moved?"d-info":"d-ok",l.tip.moved?`${esc(l.tip.reference==="HEAD"?"The default branch":l.tip.reference.replace(/^refs\/(heads|tags)\//,""))} is at <span class="mono">${esc(short(l.tip.tip))}</span> now; your lockfile builds an older commit.`:"Your lockfile builds the branch tip."]);
+  if(l.flags?.includes("pinned_differently"))n.push(["d-warn","Different manifests pin it differently."]);
+  if(l.flags?.includes("differs_from_upstream"))n.push(["d-info",`${esc(un)} pins ${esc(l.upstream_pin||"it differently")}.`]);
+  if(f?.newer_on)n.push(["d-info",`Your fork's <span class="mono">${esc(f.newer_on.branch)}</span> has ${plural(f.newer_on.commits,"commit")} past the pin.`]);
+  return n;
 }
-function libBody(l,un,all){
-  const f=l.fork,web=webOf(l.url),upWeb=f&&webOf(f.upstream);
-  const link=(u,t)=>u?`<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(t)}</a>`:esc(t);
-  const notes=[];
-  if(l.whose==="upstream")notes.push(["d-mute",`Maintained by ${esc(l.maintained_by||un)}: the project you forked uses it too, so keeping it current is its job.`]);
-  if(l.whose==="other")notes.push(["d-mute","Someone else's library. tether only checks how it is pinned."]);
-  if(l.problem)notes.push(["d-warn",esc(l.problem)]);
-  if(l.flags?.includes("unpinned"))notes.push(["d-warn","No pin: every lockfile refresh builds whatever the default branch is then."]);
-  if(l.flags?.includes("floating"))notes.push(["d-mute","Follows a branch, not a fixed commit."]);
-  if(l.tip)notes.push([l.tip.moved?"d-info":"d-ok",l.tip.moved?`${esc(l.tip.reference==="HEAD"?"The default branch":l.tip.reference.replace(/^refs\/(heads|tags)\//,""))} is at <span class="mono">${esc(short(l.tip.tip))}</span> now; your lockfile builds an older commit.`:"Your lockfile builds the branch tip."]);
-  if(l.flags?.includes("pinned_differently"))notes.push(["d-warn","Different manifests pin it differently."]);
-  if(l.flags?.includes("differs_from_upstream"))notes.push(["d-info",`${esc(un)} pins ${esc(l.upstream_pin||"it differently")}.`]);
-  if(f?.newer_on)notes.push(["d-info",`Your fork's <span class="mono">${esc(f.newer_on.branch)}</span> has ${plural(f.newer_on.commits,"commit")} past the pin.`]);
-  if(f&&f.behind)notes.push([f.conflicts?.length?"d-warn":"d-ok",f.conflicts==null?"Merge not previewed.":f.conflicts.length?`Merging upstream would conflict in ${plural(f.conflicts.length,"file")}.`:"Merging upstream would not conflict."]);
-  const changes=all||f?.changes||[];
-  const chg=c=>`<div class="chg"><span class="mono">${upWeb?`<a href="${esc(upWeb+"/commit/"+c.sha)}" target="_blank" rel="noopener noreferrer">${esc(short(c.sha))}</a>`:esc(short(c.sha))}</span><span class="t">${esc(c.subject)}${c.security?.length?` <span class="pill bad">${esc(c.security.join(", "))}</span>`:""}${c.near_yours?.length?`<span class="near" title="${esc(c.near_yours.join("\n"))}">touches ${esc(c.near_yours.join(", "))}</span>`:""}</span><span class="faint" style="flex:none">${esc(ago(new Date(c.timestamp*1000).toISOString()))}</span></div>`;
-  return `<h2>${esc(l.name)} ${l.maintained_by?`<span class="tag">${esc(l.maintained_by)}</span>`:""}</h2>
-  <div class="meta" style="margin-top:0"><span>${link(web,repoOf(l.url))}</span><span class="mono">${esc(pinsOf(l))}</span><span>${esc(whoseLabel(l.whose,un))}</span></div>
-  ${f?`<h4>Against ${link(upWeb,repoOf(f.upstream))} <span class="mono">${esc(f.upstream_branch)}</span></h4>
-  <div class="facts"><div><div class="k">Behind</div><div class="v" style="${f.behind?"color:var(--warn)":""}">${f.behind}</div></div><div><div class="k">Your commits</div><div class="v">${f.ahead}</div></div><div><div class="k">Files you changed</div><div class="v">${f.your_files}</div></div><div><div class="k">Security fixes</div><div class="v" style="${f.security?"color:var(--bad)":""}">${f.security}</div></div></div>
-  ${f.releases?.length?`<p class="muted" style="margin:12px 0 0">Releases your pin does not contain: ${f.releases.map(r=>`<span class="pill">${esc(r)}</span>`).join(" ")}</p>`:""}`:""}
-  ${notes.length?`<h4>Notes</h4><div class="notes">${notes.map(([d,t])=>`<div><span class="dot ${d}"></span><span>${t}</span></div>`).join("")}</div>`:""}
-  ${f?.conflicts?.length?`<h4>Would conflict</h4><pre>${f.conflicts.map(esc).join("\n")}</pre>`:""}
-  ${f?`<h4>${all?`Upstream changes (${changes.length})`:`Upstream changes that need a look (${changes.length} of ${f.behind})`}</h4><div>${changes.map(chg).join("")||'<div class="faint">None.</div>'}</div>`:""}
-  <h4>Where it is used</h4>
-  <div class="card"><table class="ftable uses"><tbody>${(l.uses||[]).map(u=>`<tr style="cursor:default"><td class="mono">${esc(u.manifest)}</td><td class="faint">${esc(u.section)}</td><td class="mono">${esc(u.package)}</td><td class="mono faint">${esc(pinText(u.pin))}${u.locked?` · locked ${esc(short(u.locked))}`:""}</td></tr>`).join("")}</tbody></table></div>
-  <h4>In a terminal</h4><code class="cmd copy" data-copy="tether deps ${esc(l.name)}">tether deps ${esc(l.name)}</code>`;
+function notesHtml(n){return `<div class="notes" style="padding:12px 16px">${n.map(([d,t])=>`<div><span class="dot ${d}"></span><span>${t}</span></div>`).join("")}</div>`}
+function usesPanel(l){
+  return `<div class="card panel list"><div class="ph"><h3>Where it is used</h3><span class="sp"></span><span class="faint">${(l.uses||[]).length}</span></div>${(l.uses||[]).map(u=>`<div class="li" style="flex-direction:column;align-items:flex-start;gap:2px"><span class="mono" style="width:100%">${esc(u.manifest)}</span><span class="faint" style="font-size:12px">${esc(u.section)} · <span class="mono">${esc(u.package)}</span> · ${esc(pinText(u.pin))}${u.locked?` · locked <span class="mono">${esc(short(u.locked))}</span>`:""}</span></div>`).join("")}</div>`;
 }
+function library(name){
+  if(!D.deps)return `<div class="loading">Reading manifests…</div>`;
+  const F=libFacts(),base=F?.libs.find(x=>x.name===name);
+  const back=`<a class="chip" href="#libraries" style="margin-bottom:14px">← Libraries</a>`;
+  if(!base)return `${back}<h1>${esc(name)}</h1><p class="lede">No library from git is called that.</p>`;
+  const full=libFull[name],l=full||base,f=l.fork,un=F.upName;
+  const web=webOf(l.url),upWeb=f&&webOf(f.upstream);
+  const checkBtn=`<button class="btn" id="libFetchOne" ${libBusyOne?"disabled":""} title="Fetch this library and the project it came from"><svg viewBox="0 0 16 16"><path d="M13 6a5 5 0 1 0 .5 4"/><path d="M13.5 2.5V6H10"/></svg>${libBusyOne?"Checking…":"Check upstream"}</button>`;
+  const head=`${back}
+  <div style="display:flex;align-items:center;gap:10px"><h1 style="margin:0">${esc(l.name)}</h1>${l.maintained_by?`<span class="tag">${esc(l.maintained_by)}</span>`:""}<span class="pill">${esc(whoseLabel(l.whose,un))}</span><span class="sp" style="flex:1"></span><code class="cmd copy" data-copy="tether deps ${esc(l.name)}" title="Copy">tether deps ${esc(l.name)}</code>${l.whose==="yours"?checkBtn:""}</div>
+  <div class="meta" style="margin:8px 0 18px">${linkTo(web,repoOf(l.url))}<span class="mono">${esc(pinsOf(l))}</span>${f?`<span>forked from ${linkTo(upWeb,repoOf(f.upstream))} <span class="mono">${esc(f.upstream_branch)}</span></span>`:""}</div>`;
+  const notes=libNotes(l,un);
+  if(!f){
+    const lock=(l.uses||[]).find(u=>u.locked)?.locked;
+    return `${head}
+    <div class="card kpis">
+      <div class="kpi"><div class="k">Pinned to</div><div class="v" style="font-size:16px">${esc(pinsOf(l))}</div><div class="s">${(l.uses||[]).length} ${(l.uses||[]).length===1?"use":"uses"}</div></div>
+      <div class="kpi"><div class="k">Lockfile builds</div><div class="v mono" style="font-size:16px">${lock?esc(short(lock)):"–"}</div><div class="s">${lock?"from Cargo.lock":"no lockfile entry"}</div></div>
+      <div class="kpi"><div class="k"><span class="dot ${l.tip?.moved?"d-info":"d-ok"}"></span>Branch now</div><div class="v mono" style="font-size:16px">${l.tip?esc(short(l.tip.tip)):"–"}</div><div class="s">${l.tip?(l.tip.moved?"moved since your lockfile":"same as your lockfile"):"fixed pin, nothing to follow"}</div></div>
+      <div class="kpi"><div class="k">Kept current by</div><div class="v" style="font-size:16px">${esc(l.maintained_by||"its owner")}</div><div class="s">${l.whose==="upstream"?"the project you forked":"not your fork"}</div></div>
+    </div>
+    <div class="grid2"><div class="card panel"><div class="ph"><h3>Notes</h3></div>${notesHtml(notes)}</div>${usesPanel(l)}</div>`;
+  }
+  // Your fork.
+  const changes=f.changes||[];
+  const look=changes.filter(c=>c.security?.length||c.near_yours?.length),sec=changes.filter(c=>c.security?.length);
+  const list={look,security:sec,all:changes}[libTab]||look;
+  const tab=(k,t,n)=>`<a class="${libTab===k?"on":""}" href="#" data-libtab="${k}">${t}<span class="c">${n}</span></a>`;
+  const chRow=c=>`<tr style="cursor:default"><td class="mono">${upWeb?linkTo(upWeb+"/commit/"+c.sha,short(c.sha)):esc(short(c.sha))}</td><td class="t" title="${esc(c.subject)}">${esc(c.subject)}</td><td>${c.security?.length?`<span class="pill bad">${esc(c.security.join(", "))}</span>`:""}${c.near_yours?.length?`<span class="pill info" title="${esc(c.near_yours.join("\n"))}">touches ${plural(c.near_yours.length,"file")} of yours</span>`:""}</td><td class="num faint">${esc(when(c.timestamp))}</td></tr>`;
+  const sentence=!f.behind?`Up to date with ${repoOf(f.upstream)}, with ${plural(f.ahead,"commit")} of your own on top.`
+    :`${plural(f.behind,"upstream commit")} your pin doesn't have${f.security?`, ${f.security} of them look like security fixes`:""}${f.near_yours?`; ${f.near_yours} touch files your fork changed`:""}.`;
+  const conflicts=f.conflicts;
+  const merge=!f.behind?`<div class="notes" style="padding:12px 16px"><div><span class="dot d-ok"></span>Nothing to merge.</div></div>`
+    :conflicts==null?`<div class="notes" style="padding:12px 16px"><div><span class="dot d-mute"></span>Not previewed.</div></div>`
+    :conflicts.length?`${conflicts.slice(0,12).map(p=>`<div class="li"><span class="mono" title="${esc(p)}">${esc(p)}</span></div>`).join("")}${conflicts.length>12?`<div class="more">${conflicts.length-12} more</div>`:""}`
+    :`<div class="notes" style="padding:12px 16px"><div><span class="dot d-ok"></span>Merges with no conflict.</div></div>`;
+  const patches=f.patches||[],files=f.files||[],forkWeb=web;
+  return `${head}
+  <div class="card callout"><span class="dot ${f.security?"d-bad":f.behind?"d-warn":"d-ok"}"></span><div class="w"><b>${esc(sentence)}</b><div>${f.releases?.length?`Releases your pin is missing: ${f.releases.map(esc).join(", ")}.`:"Your pin has every upstream release."}</div></div></div>
+  <div class="card kpis">
+    <div class="kpi"><div class="k"><span class="dot ${f.behind?"d-warn":"d-ok"}"></span>Behind upstream</div><div class="v">${f.behind}</div><div class="s">commits on ${esc(f.upstream_branch)}</div></div>
+    <div class="kpi"><div class="k"><span class="dot d-bad"></span>Security</div><div class="v">${f.security}</div><div class="s">possible fixes waiting</div></div>
+    <div class="kpi"><div class="k"><span class="dot d-info"></span>Near yours</div><div class="v">${f.near_yours}</div><div class="s">upstream commits touch your files</div></div>
+    <div class="kpi"><div class="k">Your fork</div><div class="v">${f.ahead}</div><div class="s">${plural(f.ahead,"commit")}, ${plural(f.your_files,"file")} changed</div></div>
+  </div>
+  <div class="cols">
+    <div style="display:flex;flex-direction:column;gap:18px;min-width:0">
+      <div class="card panel"><div class="ph"><h3>Upstream changes</h3><span class="sp"></span><nav class="tabs">${tab("look","Need a look",look.length)}${tab("security","Security",sec.length)}${tab("all","All",full?changes.length:f.behind)}</nav></div>
+        ${full===undefined||full===null?(libTab==="all"?'<div class="loading">Loading every change…</div>':""):""}
+        ${list.length?`<table><thead><tr><th>Commit</th><th>Subject</th><th></th><th class="num">Date</th></tr></thead><tbody>${list.map(chRow).join("")}</tbody></table>`:(full||libTab!=="all"?`<div class="empty">${libTab==="look"?"Nothing touches your changes or looks like a security fix.":"None."}</div>`:"")}
+      </div>
+      <div class="card panel"><div class="ph"><h3>Your fork's commits</h3><span class="sp"></span><span class="faint">on top of ${esc(repoOf(f.upstream))}</span></div>
+        ${patches.length?`<table><tbody>${patches.map(p=>`<tr style="cursor:default"><td class="mono">${forkWeb?linkTo(forkWeb+"/commit/"+p.sha,short(p.sha)):esc(short(p.sha))}</td><td class="t" title="${esc(p.subject)}">${esc(p.subject)}</td><td class="faint">${plural(p.files,"file")}</td><td class="num faint">${esc(when(p.timestamp))}</td></tr>`).join("")}</tbody></table>`:`<div class="empty">${full?"No commits of your own.":"Loading…"}</div>`}
+      </div>
+    </div>
+    <div class="side">
+      <div class="card panel list"><div class="ph"><span class="dot ${!f.behind||conflicts&&!conflicts.length?"d-ok":"d-warn"}"></span><h3>Merging upstream</h3><span class="sp"></span><span class="faint">${conflicts?.length?plural(conflicts.length,"conflict"):""}</span></div>${merge}</div>
+      ${notes.length?`<div class="card panel"><div class="ph"><h3>Notes</h3></div>${notesHtml(notes)}</div>`:""}
+      ${usesPanel(l)}
+      <div class="card panel list"><div class="ph"><h3>Files your fork changed</h3><span class="sp"></span><span class="faint">${f.your_files}</span></div>${files.slice(0,10).map(p=>`<div class="li"><span class="mono" title="${esc(p)}">${esc(p)}</span></div>`).join("")}${files.length>10?`<details><summary class="more" style="cursor:pointer">${files.length-10} more</summary>${files.slice(10).map(p=>`<div class="li"><span class="mono" title="${esc(p)}">${esc(p)}</span></div>`).join("")}</details>`:""}${!files.length?`<div class="empty">${full?"None.":"Loading…"}</div>`:""}</div>
+    </div>
+  </div>`;
+}
+function bindLibrary(name){
+  if(libFull[name]===undefined&&libFacts()?.libs.some(x=>x.name===name)){
+    libFull[name]=null;
+    get("/api/deps?name="+encodeURIComponent(name)).then(r=>{libFull[name]=(r.ok&&r.data.libraries?.[0])||false;if(location.hash==="#library/"+encodeURIComponent(name))route(true)});
+  }
+  const b=$("#libFetchOne");
+  if(b)b.onclick=async()=>{libBusyOne=true;route(true);
+    const r=await get("/api/deps?fetch=1&name="+encodeURIComponent(name));libBusyOne=false;
+    const fresh=r.ok&&r.data.libraries?.[0];
+    if(fresh){libFull[name]=fresh;const all=D.deps?.data?.libraries;const i=all?.findIndex(x=>x.name===name);if(i>=0)all[i]=fresh;toast(r.summary)}else toast(r.summary);
+    chrome();route(true)};
+}
+document.addEventListener("click",e=>{const t=e.target.closest("[data-libtab]");if(t){e.preventDefault();libTab=t.dataset.libtab;route(true)}},true);
 
 // packet drawer
 document.addEventListener("click",e=>{
   const up=e.target.closest("[data-up]");if(up){e.preventDefault();if((up.dataset.up||null)!==UP)switchUpstream(up.dataset.up);return}
   if(e.target.closest("input,select,button,a,[data-copy]"))return;
-  const lib=e.target.closest("[data-lib]");if(lib){openLibrary(lib.dataset.lib);return}
+  const lib=e.target.closest("[data-lib]");if(lib){location.hash="#library/"+encodeURIComponent(lib.dataset.lib);return}
   const r=e.target.closest("[data-item]");if(r)openPacket(r.dataset.item)});
 function closeDrawer(){$("#drawer").classList.remove("on");$("#scrim").classList.remove("on")}
 $("#scrim").onclick=closeDrawer;$("#dclose").onclick=closeDrawer;

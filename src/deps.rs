@@ -507,6 +507,22 @@ pub struct ForkState {
     pub changes: Vec<Change>,
     pub security: usize,
     pub near_yours: usize,
+    /// Your fork's commits on top of upstream, newest first (one library only).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub patches: Vec<Patch>,
+    /// Files your fork changed (one library only).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<String>,
+}
+
+/// One of your fork's own commits.
+#[derive(Debug, Clone, Serialize)]
+pub struct Patch {
+    pub sha: String,
+    pub subject: String,
+    pub timestamp: i64,
+    /// How many of the fork's changed files it touches.
+    pub files: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -907,7 +923,24 @@ fn fork_state(
     if !full {
         changes.retain(|c| !c.security.is_empty() || !c.near_yours.is_empty());
     }
+    // For one library: your fork's own commits and every file they change.
+    let (patches, files) = if full {
+        let patches = upstream_changes(&cache, &format!("{target}..{pinned}"), &yours, &[])?
+            .into_iter()
+            .map(|c| Patch {
+                files: c.near_yours.len(),
+                sha: c.sha,
+                subject: c.subject,
+                timestamp: c.timestamp,
+            })
+            .collect();
+        (patches, yours.iter().cloned().collect())
+    } else {
+        (Vec::new(), Vec::new())
+    };
     Ok(ForkState {
+        patches,
+        files,
         releases: releases(&cache, &pinned)?,
         conflicts: conflicts(&cache, &pinned, &target),
         newer_on: newer_on(&cache, &pinned)?,

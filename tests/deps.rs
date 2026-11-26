@@ -150,6 +150,15 @@ fn one_library_lists_every_upstream_change() {
     let libraries = run.json["data"]["libraries"].as_array().unwrap();
     assert_eq!(libraries.len(), 1);
     assert_eq!(libraries[0]["fork"]["changes"].as_array().unwrap().len(), 3);
+    // One library also lists your fork's own commits and changed files.
+    assert_eq!(
+        libraries[0]["fork"]["patches"][0]["subject"],
+        "our patch: faster parse"
+    );
+    assert_eq!(
+        libraries[0]["fork"]["files"],
+        serde_json::json!(["src/lib.rs"])
+    );
     assert!(
         run.json["summary"]
             .as_str()
