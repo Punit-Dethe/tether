@@ -70,6 +70,23 @@ a reading aid and never change what a sync does.
 **Guards it all in CI.** `tether check` is one gate for size budgets, stray
 changes, owned areas, drift, ports and reviews.
 
+## How it compares
+
+Most fork tools make your copy match upstream again. tether is for the fork
+that has become its own product, where you choose what to take and keep your
+own changes and history. Here it is next to the strongest alternatives:
+GitHub's built-in Sync fork button, Google's
+[Copybara](https://github.com/google/copybara), and the OpenHands
+[upstream fork sync](https://www.skills.sh/openhands/extensions/upstream-fork-sync)
+agent skill.
+
+![tether compared with GitHub Sync fork, Copybara and OpenHands fork sync](docs/screenshots/compare.png)
+
+Copybara is the better choice when you mostly need to move and rewrite code
+between repositories. A scheduled agent rebase suits a fork that stays close to
+upstream and shares its history. Spotted something wrong? Open an issue. The
+table's source is [docs/compare/compare.html](docs/compare/compare.html).
+
 ## Try it
 
 ```sh
