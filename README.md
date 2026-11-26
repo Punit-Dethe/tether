@@ -31,6 +31,9 @@ always says what to do next.
 - **Verify three ways.** Build and test your fork as it was, upstream as it
   shipped, and the result — so you know whose test broke.
 - **A divergence map generated from the code**, not maintained by hand.
+- **A local dashboard.** `tether ui` opens a read-only page of the same
+  reports in your browser: what is waiting, what a sync would conflict on,
+  and where your fork differs. It listens on this machine only.
 
 ## Try it
 

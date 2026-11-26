@@ -22,4 +22,5 @@ pub mod session;
 pub mod syncpoint;
 pub mod time;
 pub mod track;
+pub mod ui;
 pub mod verify;

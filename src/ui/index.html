@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tether</title>
+<link rel="icon" href="data:,">
+<style>
+:root{
+  --font:Inter,"Inter Variable",ui-sans-serif,system-ui,-apple-system,"Segoe UI Variable Text","Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"Cascadia Code","SF Mono",Consolas,monospace;
+}
+[data-theme=dark]{--bg:#08090a;--side:#0b0c0d;--panel:#0f1011;--raise:#151618;--line:#1d1e21;--line2:#2a2b2f;--tx:#f7f8f8;--tx2:#a0a4ab;--tx3:#7c8089;--ac:#f7f8f8;--acon:#08090a;--ok:#4cb782;--warn:#f2994a;--bad:#eb5757;--info:#4ea7fc;--hover:rgba(255,255,255,.035);--kbd:#1d1e21;color-scheme:dark}
+[data-theme=light]{--bg:#fcfcfd;--side:#f6f6f7;--panel:#fff;--raise:#f4f4f5;--line:#e8e8ea;--line2:#dcdcdf;--tx:#1b1b1f;--tx2:#5b5d64;--tx3:#71737a;--ac:#1b1b1f;--acon:#fff;--ok:#1f8a5b;--warn:#c2610c;--bad:#d03b3b;--info:#1f6fd1;--hover:rgba(0,0,0,.03);--kbd:#ececee;color-scheme:light}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--tx);font:13px/1.45 var(--font);letter-spacing:-.005em;-webkit-font-smoothing:antialiased;display:flex;overflow:hidden}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
+a{color:inherit;text-decoration:none}
+.ph a:hover,.preview a:hover,.drawer a:hover{text-decoration:underline}
+.mono{font-family:var(--mono);font-size:12px;letter-spacing:0}
+.muted{color:var(--tx2)}.faint{color:var(--tx3)}
+svg{display:block}
+
+/* sidebar */
+aside{width:236px;flex:none;background:var(--side);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:12px 10px}
+.brand{display:flex;align-items:center;gap:10px;padding:4px 6px 14px}
+.logo{width:26px;height:26px;border-radius:7px;background:var(--raise);border:1px solid var(--line2);display:grid;place-items:center}
+.brand b{display:block;font-weight:600;font-size:13px}
+.brand span{display:block;font-size:11.5px;color:var(--tx3)}
+.search{display:flex;align-items:center;gap:8px;height:30px;padding:0 8px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--tx3);width:100%;margin-bottom:12px}
+.search:hover{border-color:var(--line2)}
+.search span{flex:1;text-align:left}
+kbd{font:11px var(--font);background:var(--kbd);border-radius:4px;padding:1px 5px;color:var(--tx2)}
+nav a{display:flex;align-items:center;gap:9px;height:30px;padding:0 8px;border-radius:6px;color:var(--tx2);text-decoration:none}
+nav a:hover{background:var(--hover);color:var(--tx)}
+nav a.on{background:var(--raise);color:var(--tx)}
+nav a .n{margin-left:auto;font-size:11.5px;color:var(--tx3);font-variant-numeric:tabular-nums}
+nav svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.sect{font-size:11.5px;color:var(--tx3);padding:18px 8px 6px;font-weight:500}
+.dot{width:7px;height:7px;border-radius:50%;flex:none;display:inline-block}
+.d-bad{background:var(--bad)}.d-warn{background:var(--warn)}.d-info{background:var(--info)}.d-ok{background:var(--ok)}.d-mute{background:var(--tx3)}
+.foot{margin-top:auto;display:flex;align-items:center;gap:6px;padding:8px 6px 0;border-top:1px solid var(--line);color:var(--tx3);font-size:11.5px}
+.foot .sp{flex:1}
+.icon-btn{width:28px;height:28px;border-radius:6px;display:grid;place-items:center;color:var(--tx2)}
+.icon-btn:hover{background:var(--hover);color:var(--tx)}
+.icon-btn svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.icon-btn[disabled]{opacity:.45;cursor:default}
+
+/* main */
+main{flex:1;display:flex;flex-direction:column;min-width:0}
+header{height:52px;flex:none;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;padding:0 20px}
+.crumb{color:var(--tx3)}.crumb b{color:var(--tx);font-weight:500}
+header .sp{flex:1}
+.fetched{color:var(--tx3);font-size:12px}
+.btn{height:28px;padding:0 11px;border-radius:6px;border:1px solid var(--line2);display:inline-flex;align-items:center;gap:7px;color:var(--tx2);background:var(--panel)}
+.btn:hover{color:var(--tx);border-color:var(--tx3)}
+.btn.primary{background:var(--ac);color:var(--acon);border-color:var(--ac);font-weight:500}
+.btn.primary:hover{opacity:.9}
+.btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.scroll{flex:1;overflow:auto}
+.wrap{max-width:1180px;margin:0 auto;padding:26px 28px 48px}
+
+.hero{display:flex;gap:28px;align-items:stretch;margin-bottom:22px}
+.hero .l{flex:1;min-width:0}
+.eyebrow{color:var(--tx2);font-size:12.5px;margin-bottom:6px}
+.big{display:flex;align-items:baseline;gap:10px}
+.big b{font-size:44px;font-weight:600;letter-spacing:-.03em;line-height:1;font-variant-numeric:tabular-nums}
+.big span{color:var(--tx2);font-size:15px}
+.meta{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:14px;color:var(--tx3);font-size:12.5px}
+.meta b{color:var(--tx2);font-weight:500}
+.summary{margin-top:12px;color:var(--tx2)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px}
+.preview{width:360px;flex:none;padding:16px 18px}
+.preview h3,.panel h3{margin:0;font-size:12.5px;font-weight:500;color:var(--tx2)}
+.bar{display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--raise);margin:14px 0 12px;gap:2px}
+.bar i{display:block;height:100%}
+.legend{display:flex;flex-direction:column;gap:7px;font-size:12.5px}
+.legend div{display:flex;align-items:center;gap:8px}
+.legend b{margin-left:auto;font-weight:500;font-variant-numeric:tabular-nums}
+.preview .cmd{margin-top:14px;padding-top:12px;border-top:1px solid var(--line);display:flex;align-items:center;gap:8px;color:var(--tx3)}
+
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);margin-bottom:22px}
+.kpi{padding:14px 18px;border-left:1px solid var(--line)}
+.kpi:first-child{border-left:0}
+.kpi .k{color:var(--tx3);font-size:12px;display:flex;align-items:center;gap:7px}
+.kpi .v{font-size:22px;font-weight:600;letter-spacing:-.02em;margin-top:4px;font-variant-numeric:tabular-nums}
+.kpi .s{color:var(--tx3);font-size:12px}
+
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:18px;align-items:start}
+.panel{overflow:hidden}
+.panel .ph{display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--line)}
+.panel .ph .sp{flex:1}
+.group{border-bottom:1px solid var(--line)}
+.group:last-child{border-bottom:0}
+.gh{display:flex;align-items:center;gap:9px;padding:10px 16px;background:var(--raise);font-size:12.5px}
+.gh .c{color:var(--tx3);font-variant-numeric:tabular-nums}
+.gh .mono{margin-left:auto;color:var(--tx3)}
+.row{display:flex;align-items:center;gap:12px;height:40px;padding:0 16px;border-top:1px solid var(--line);cursor:pointer;min-width:0}
+.gh+.row{border-top:0}
+.row:hover{background:var(--hover)}
+.row .ref{width:74px;flex:none;color:var(--tx3)}
+.row .t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .m{color:var(--tx3);font-size:12px;flex:none;font-variant-numeric:tabular-nums}
+.more{padding:9px 16px;color:var(--tx3);font-size:12px;border-top:1px solid var(--line)}
+.pill{display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 7px;border-radius:10px;border:1px solid var(--line2);font-size:11.5px;color:var(--tx2);flex:none;white-space:nowrap}
+.pill.bad{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 35%,transparent)}
+.pill.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 35%,transparent)}
+.pill.info{color:var(--info);border-color:color-mix(in srgb,var(--info) 35%,transparent)}
+.pill.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 35%,transparent)}
+.empty{padding:28px 16px;text-align:center;color:var(--tx3)}
+
+.side{display:flex;flex-direction:column;gap:18px}
+.budget{padding:10px 16px 4px}
+.brow{padding:6px 0}
+.brow .top{display:flex;gap:8px;font-size:12px;align-items:baseline}
+.brow .top .mono{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl;text-align:left;color:var(--tx2)}
+.brow .top .dl{color:var(--tx3);font-variant-numeric:tabular-nums}
+.track{height:4px;border-radius:2px;background:var(--raise);margin-top:6px;overflow:hidden}
+.track i{display:block;height:100%;background:var(--tx3);border-radius:2px}
+.track i.bad{background:var(--bad)}
+.health{display:grid;grid-template-columns:repeat(3,1fr);border-top:1px solid var(--line)}
+.health div{padding:12px 16px;border-left:1px solid var(--line)}
+.health div:first-child{border-left:0}
+.health .k{color:var(--tx3);font-size:12px}
+.health .v{font-size:18px;font-weight:600;margin-top:2px;font-variant-numeric:tabular-nums}
+.latest .row{height:auto;padding:9px 16px;align-items:flex-start;flex-direction:column;gap:3px}
+.latest .row .l1{display:flex;gap:8px;width:100%;align-items:center}
+.latest .row .t{white-space:nowrap}
+
+/* tables */
+.toolbar{display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.chip{height:26px;padding:0 10px;border-radius:13px;border:1px solid var(--line);color:var(--tx2);display:inline-flex;align-items:center;gap:6px}
+.chip:hover{border-color:var(--line2);color:var(--tx)}
+.chip.on{background:var(--raise);border-color:var(--line2);color:var(--tx)}
+.chip .c{color:var(--tx3);font-variant-numeric:tabular-nums}
+.filter{margin-left:auto;height:28px;width:260px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--tx);padding:0 10px;font:inherit;outline:none}
+.filter:focus{border-color:var(--tx3)}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-weight:500;color:var(--tx3);font-size:12px;padding:10px 16px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:0 16px;height:40px;border-bottom:1px solid var(--line);white-space:nowrap}
+tr:last-child td{border-bottom:0}
+tbody tr{cursor:pointer}
+tbody tr:hover{background:var(--hover)}
+td.t{max-width:0;width:100%;overflow:hidden;text-overflow:ellipsis}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+h1{font-size:20px;font-weight:600;letter-spacing:-.02em;margin:0 0 4px}
+.lede{color:var(--tx2);margin:0 0 20px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.list .li{display:flex;align-items:center;gap:10px;padding:9px 16px;border-top:1px solid var(--line)}
+.list .li:first-child{border-top:0}
+.list .li .mono{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.callout{display:flex;align-items:center;gap:12px;padding:14px 16px;margin-bottom:18px}
+.callout .w{flex:1;min-width:0}
+.callout .w div{color:var(--tx2);font-size:12.5px;margin-top:2px}
+code.cmd{font-family:var(--mono);font-size:12px;background:var(--raise);border:1px solid var(--line);border-radius:5px;padding:2px 6px;color:var(--tx)}
+.copy{cursor:pointer}
+.copy:hover{border-color:var(--tx3)}
+details.file{border-top:1px solid var(--line)}
+details.file summary{list-style:none;display:flex;align-items:center;gap:12px;height:40px;padding:0 16px;cursor:pointer}
+details.file summary::-webkit-details-marker{display:none}
+details.file summary:hover{background:var(--hover)}
+details.file summary .mono{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+details.file .why{padding:4px 16px 12px 40px;display:flex;flex-direction:column;gap:5px;font-size:12.5px}
+details.file .why div{display:flex;gap:10px}
+details.file .why .ln{width:46px;flex:none;color:var(--tx3);text-align:right}
+
+/* drawer */
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.35);opacity:0;pointer-events:none;transition:opacity .15s}
+.scrim.on{opacity:1;pointer-events:auto}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(640px,92vw);background:var(--panel);border-left:1px solid var(--line2);transform:translateX(100%);transition:transform .18s ease;display:flex;flex-direction:column;z-index:5}
+.drawer.on{transform:none}
+.drawer .dh{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line)}
+.drawer .dh .sp{flex:1}
+.drawer .db{flex:1;overflow:auto;padding:18px}
+.drawer h2{font-size:16px;font-weight:600;margin:0 0 8px;letter-spacing:-.01em}
+.drawer h4{font-size:12px;font-weight:500;color:var(--tx3);margin:22px 0 8px}
+.req{display:flex;flex-direction:column;gap:8px}
+.req .r{border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.req .r .a{font-size:12px;color:var(--tx2);margin-bottom:6px}
+.req code{display:block;white-space:pre-wrap;word-break:break-all}
+pre{margin:0;font-family:var(--mono);font-size:11.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px;overflow:auto}
+pre .a{color:var(--ok)}pre .d{color:var(--bad)}pre .h{color:var(--info)}pre .f{color:var(--tx);font-weight:600}
+.ftable td{height:34px;font-size:12px}
+.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%) translateY(20px);opacity:0;background:var(--ac);color:var(--acon);padding:7px 12px;border-radius:7px;font-size:12.5px;transition:.15s;pointer-events:none;z-index:9}
+.toast.on{opacity:1;transform:translateX(-50%)}
+.err{padding:14px 16px;color:var(--bad)}
+.loading{color:var(--tx3);padding:40px 0;text-align:center}
+@media (max-width:1000px){.cols,.grid2{grid-template-columns:1fr}.hero{flex-direction:column}.preview{width:auto}.kpis{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<aside>
+  <div class="brand">
+    <div class="logo"><svg width="16" height="12" viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="5.5" cy="6" r="4.5"/><circle cx="10.5" cy="6" r="4.5"/></svg></div>
+    <div><b id="repo">tether</b><span id="tracks">loading…</span></div>
+  </div>
+  <button class="search" id="searchBtn" title="Search upstream commits"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg><span>Search</span><kbd id="kmod">Ctrl K</kbd></button>
+  <nav id="nav">
+    <a href="#overview" data-v="overview"><svg viewBox="0 0 16 16"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>Overview</a>
+    <a href="#inbox" data-v="inbox"><svg viewBox="0 0 16 16"><path d="M2 9.5 4 3h8l2 6.5V13H2z"/><path d="M2 9.5h3.5l1 1.5h3l1-1.5H14"/></svg>Inbox<span class="n" id="n-inbox"></span></a>
+    <a href="#sync" data-v="sync"><svg viewBox="0 0 16 16"><path d="M13 6a5 5 0 0 0-9-1.5M3 10a5 5 0 0 0 9 1.5"/><path d="M4 2v2.5h2.5M12 14v-2.5H9.5"/></svg>Sync<span class="n" id="n-sync"></span></a>
+    <a href="#boundary" data-v="boundary"><svg viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="11" height="11" rx="2"/><path d="M8 2.5v11"/></svg>Boundary<span class="n" id="n-boundary"></span></a>
+    <a href="#decisions" data-v="decisions"><svg viewBox="0 0 16 16"><path d="m3 8.5 3 3 7-7"/></svg>Decisions<span class="n" id="n-decisions"></span></a>
+  </nav>
+  <div class="sect">Needs a decision</div>
+  <nav id="filters">
+    <a href="#inbox/security" data-v="inbox/security"><span class="dot d-bad"></span>Security<span class="n" id="n-security"></span></a>
+    <a href="#sync" data-v="sync/conflicts"><span class="dot d-warn"></span>Conflicts<span class="n" id="n-conflicts"></span></a>
+    <a href="#inbox/ports" data-v="inbox/ports"><span class="dot d-info"></span>Ports to review<span class="n" id="n-ports"></span></a>
+    <a href="#inbox/applied" data-v="inbox/applied"><span class="dot d-mute"></span>Done by hand<span class="n" id="n-applied"></span></a>
+  </nav>
+  <div class="foot">
+    <span id="ver">tether</span><span class="sp"></span>
+    <button class="icon-btn" id="themeBtn" title="Switch theme"><svg viewBox="0 0 16 16"><path d="M13.5 9.5A5.5 5.5 0 0 1 6.5 2.5a5.5 5.5 0 1 0 7 7z"/></svg></button>
+    <button class="icon-btn" disabled title="Settings: coming later"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2"/><path d="M8 1.8v1.7M8 12.5v1.7M1.8 8h1.7M12.5 8h1.7M3.6 3.6l1.2 1.2M11.2 11.2l1.2 1.2M3.6 12.4l1.2-1.2M11.2 4.8l1.2-1.2"/></svg></button>
+  </div>
+</aside>
+<main>
+  <header>
+    <div class="crumb"><span id="crumbRepo">tether</span> / <b id="crumb">Overview</b></div>
+    <span class="sp"></span>
+    <span class="fetched" id="fetched"></span>
+    <button class="btn" id="refresh" title="Reload from the repository"><svg viewBox="0 0 16 16"><path d="M13 6a5 5 0 1 0 .5 4"/><path d="M13.5 2.5V6H10"/></svg>Refresh</button>
+    <button class="btn primary" id="nextBtn" title="Copy the next command"><svg viewBox="0 0 16 16"><path d="m4 5 3 3-3 3M8.5 11H12"/></svg><span id="nextLabel">Next step</span></button>
+  </header>
+  <div class="scroll"><div class="wrap" id="view"><div class="loading">Loading…</div></div></div>
+</main>
+<div class="scrim" id="scrim"></div>
+<div class="drawer" id="drawer"><div class="dh"><span class="mono faint" id="dsha"></span><span class="sp"></span><button class="icon-btn" id="dclose" title="Close (Esc)"><svg viewBox="0 0 16 16"><path d="m4 4 8 8M12 4l-8 8"/></svg></button></div><div class="db" id="dbody"></div></div>
+<div class="toast" id="toast"></div>
+<script>
+"use strict";
+const $=s=>document.querySelector(s);
+const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const short=s=>(s||"").slice(0,8);
+const plural=(n,w)=>`${n} ${w}${n===1?"":"s"}`;
+let D={},loadedAt=0,inboxFilter="pending",query="";
+
+// theme
+const savedTheme=localStorage.getItem("tether-theme");
+if(savedTheme)document.documentElement.dataset.theme=savedTheme;
+else if(matchMedia("(prefers-color-scheme: light)").matches)document.documentElement.dataset.theme="light";
+$("#themeBtn").onclick=()=>{const t=document.documentElement.dataset.theme==="dark"?"light":"dark";document.documentElement.dataset.theme=t;localStorage.setItem("tether-theme",t)};
+if(/Mac/.test(navigator.platform))$("#kmod").textContent="⌘K";
+
+function ago(iso){
+  const s=(Date.now()-new Date(iso).getTime())/1000;
+  if(!isFinite(s))return "";
+  if(s<60)return "just now";
+  const u=[[86400*365,"y"],[86400*30,"mo"],[86400*7,"w"],[86400,"d"],[3600,"h"],[60,"m"]];
+  for(const [n,l] of u)if(s>=n)return Math.floor(s/n)+l+" ago";
+}
+function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("on");clearTimeout(toast.t);toast.t=setTimeout(()=>t.classList.remove("on"),1600)}
+async function copy(text){try{await navigator.clipboard.writeText(text);toast("Copied")}catch{prompt("Copy this command:",text)}}
+document.addEventListener("click",e=>{const c=e.target.closest("[data-copy]");if(c){e.stopPropagation();copy(c.dataset.copy)}});
+
+async function get(path){
+  try{const r=await fetch(path,{cache:"no-store"});return await r.json()}
+  catch(e){return {ok:false,summary:"Could not reach tether ui: "+e.message,data:null}}
+}
+async function load(){
+  $("#refresh").disabled=true;
+  const [status,inbox,preview,map,info]=await Promise.all(["status","inbox","preview","map","info"].map(n=>get("/api/"+n)));
+  D={status,inbox,preview,map,info};loadedAt=Date.now();
+  $("#refresh").disabled=false;
+  chrome();route();
+}
+
+// derived facts
+function items(){return (D.inbox?.ok&&D.inbox.data?.items)||[]}
+function pending(){return items().filter(i=>i.state==="pending")}
+function facts(){
+  const st=D.status?.data||{},ck=st.check||{},pv=D.preview?.ok?D.preview.data:null,mp=D.map?.ok?D.map.data:null;
+  const pend=pending();
+  return {st,ck,pv,mp,pend,
+    security:pend.filter(i=>i.security),
+    ports:pend.filter(i=>i.ports?.length),
+    applied:pend.filter(i=>i.applied_here),
+    reviews:pend.filter(i=>i.reviews?.some(r=>r!=="suppressed")),
+    conflicts:pv?.conflicts||[],owned:pv?.owned_conflicts||[],
+    budgetFails:ck.budgets?.failures||[],
+  };
+}
+function checkProblems(ck){
+  const out=[];
+  const b=ck.budgets?.failures||[];if(b.length)out.push(plural(b.length,"budget")+" grew");
+  if(ck.drift?.length)out.push(plural(ck.drift.length,"file")+" drifted");
+  if(ck.strays?.length)out.push(plural(ck.strays.length,"stray"));
+  if(ck.unmarked?.failures?.length)out.push(plural(ck.unmarked.failures.length,"unmarked change"));
+  if(ck.ports?.pending)out.push(plural(ck.ports.pending,"port")+" pending");
+  if(ck.adopted?.released?.length)out.push(plural(ck.adopted.released.length,"adopted file")+" released upstream");
+  if(ck.ports?.unverified?.length)out.push(plural(ck.ports.unverified.length,"unverified port"));
+  if(ck.reviews?.missing?.length)out.push(plural(ck.reviews.missing.length,"missing review"));
+  if(ck.relocations?.missing?.length)out.push(plural(ck.relocations.missing.length,"missing relocation"));
+  return out;
+}
+
+function chrome(){
+  const f=facts(),st=f.st;
+  const root=D.info?.name||(st.root||"").split("/").pop();
+  $("#ver").textContent="tether "+(D.status?.tether||"");
+  const name=root||"this fork";
+  $("#repo").textContent=name;$("#crumbRepo").textContent=name;
+  $("#tracks").textContent=st.sync_point?("synced to "+short(st.sync_point.upstream)):(st.configured===false?"not set up":"");
+  const set=(id,n)=>{$(id).textContent=n?n:""};
+  set("#n-inbox",f.pend.length);set("#n-sync",st.behind);
+  set("#n-boundary",f.mp?f.mp.files.length:0);set("#n-decisions",(f.ck.ports?.pending||0)||"");
+  set("#n-security",f.security.length);set("#n-conflicts",f.conflicts.length);set("#n-ports",f.ports.length);set("#n-applied",f.applied.length);
+  const next=D.status?.next;
+  $("#nextLabel").textContent=next?next.command.split(" ").slice(0,3).join(" "):"Up to date";
+  $("#nextBtn").title=next?("Copy: "+next.command+"\n"+next.why):"Nothing to do";
+  $("#nextBtn").onclick=()=>next?copy(next.command):toast("Nothing to do");
+  tick();
+}
+function tick(){if(loadedAt)$("#fetched").textContent="Loaded "+(Date.now()-loadedAt<60000?"just now":ago(new Date(loadedAt).toISOString()))}
+setInterval(tick,30000);
+
+// router
+const titles={overview:"Overview",inbox:"Inbox",sync:"Sync",boundary:"Boundary",decisions:"Decisions"};
+function route(){
+  const h=location.hash.slice(1)||"overview";
+  const [v,sub]=h.split("/");
+  const view=titles[v]?v:"overview";
+  if(view==="inbox"&&sub)inboxFilter=sub;
+  document.querySelectorAll("nav a").forEach(a=>a.classList.toggle("on",a.dataset.v===h||a.dataset.v===view));
+  $("#crumb").textContent=titles[view];
+  const err=["status","inbox"].map(k=>D[k]).find(r=>r&&!r.ok);
+  const v2=$("#view");
+  if(D.status&&D.status.data?.configured===false){v2.innerHTML=notSetUp();return}
+  if(err){v2.innerHTML=`<div class="card err">${esc(err.summary)}</div>`;return}
+  v2.innerHTML={overview,inbox,sync,boundary,decisions}[view]();
+  if(view==="inbox"){const q=$("#q");q.value=query;q.oninput=()=>{query=q.value;renderInboxTable()};renderInboxTable()}
+}
+addEventListener("hashchange",route);
+function notSetUp(){return `<h1>Not set up</h1><p class="lede">${esc(D.status.summary)}</p><div class="card callout"><div class="w">Run this in the repository</div><code class="cmd copy" data-copy="tether init">tether init</code></div>`}
+
+function tagsFor(i){
+  const t=[];
+  if(i.security)t.push('<span class="pill bad">security</span>');
+  if(i.ports?.length)t.push('<span class="pill info">port</span>');
+  if(i.applied_here)t.push('<span class="pill">applied here</span>');
+  const rv=(i.reviews||[]).filter(r=>r!=="suppressed");
+  if(rv.length)t.push(`<span class="pill">${esc(rv.join(", "))}</span>`);
+  return t.join("");
+}
+function statePill(s){return `<span class="pill ${{pending:"warn",merged:"ok"}[s]||""}">${esc(s)}</span>`}
+function irow(i){return `<div class="row" data-item="${esc(i.sha)}"><span class="ref mono">${esc(i.pr?"#"+i.pr:short(i.sha))}</span><span class="t">${esc(i.subject)}</span>${tagsFor(i)}<span class="m">${esc(ago(i.date))}</span></div>`}
+function group(dot,label,list,cmd,rowFn=irow,limit=5){
+  if(!list.length)return "";
+  return `<div class="group"><div class="gh"><span class="dot ${dot}"></span>${esc(label)}<span class="c">${list.length}</span>${cmd?`<span class="mono copy" data-copy="${esc(cmd)}" title="Copy">${esc(cmd)}</span>`:""}</div>${list.slice(0,limit).map(rowFn).join("")}${list.length>limit?`<div class="more">${list.length-limit} more</div>`:""}</div>`;
+}
+function pathRow(p){return `<div class="row" style="cursor:default"><span class="t mono">${esc(p)}</span></div>`}
+
+function overview(){
+  const f=facts(),st=f.st,pend=f.pend;
+  const oldest=pend.map(i=>i.date).sort()[0];
+  const probs=checkProblems(f.ck);
+  const total=f.conflicts.length+f.owned.length;
+  const okW=total?f.owned.length/total*100:0,warnW=total?f.conflicts.length/total*100:0;
+  const next=D.status.next;
+  const latest=items().slice(0,6);
+  const files=(f.mp?.files||[]).slice().sort((a,b)=>b.changes-a.changes);
+  const maxC=Math.max(1,...files.map(x=>x.changes));
+  const grew=new Set(f.budgetFails.map(s=>(s.match(/: (.+?) \d+ -> /)||[])[1]));
+  const showFiles=[...files.filter(x=>grew.has(x.path)),...files.filter(x=>!grew.has(x.path))].slice(0,6);
+  return `
+  <div class="hero">
+    <div class="l">
+      <div class="eyebrow">Behind upstream</div>
+      <div class="big"><b>${st.behind??0}</b><span>${st.behind===1?"commit":"commits"}</span></div>
+      <div class="meta">
+        ${st.sync_point?`<span>Sync point <b class="mono">${esc(short(st.sync_point.upstream))}</b></span>`:""}
+        ${oldest?`<span>Oldest waiting <b>${esc(ago(oldest))}</b></span>`:""}
+        <span>Latest release <b>${esc(st.release?.tag||st.release||"none tracked")}</b></span>
+        ${st.unreleased?`<span><b>${st.unreleased}</b> unreleased</span>`:""}
+      </div>
+      <div class="summary">${esc(D.status.summary)}${next?` Next: <code class="cmd copy" data-copy="${esc(next.command)}" title="${esc(next.why)}">${esc(next.command)}</code>`:""}</div>
+    </div>
+    <div class="card preview">
+      <h3>Sync preview</h3>
+      ${f.pv?`
+      <div class="bar">${total?`<i style="width:${okW}%;background:var(--ok)"></i><i style="width:${warnW}%;background:var(--warn)"></i>`:""}</div>
+      <div class="legend">
+        <div><span class="dot d-ok"></span>Resolve themselves<b>${f.owned.length}</b></div>
+        <div><span class="dot d-warn"></span>Need you<b>${f.conflicts.length}</b></div>
+      </div>
+      <div class="cmd"><span>Dry run, no fetch.</span><a href="#sync" style="margin-left:auto">Details</a></div>`
+      :`<div class="summary faint">${esc(D.preview?.summary||"No preview.")}</div>`}
+    </div>
+  </div>
+  <div class="card kpis">
+    <div class="kpi"><div class="k">Pending</div><div class="v">${pend.length}</div><div class="s">upstream commits</div></div>
+    <div class="kpi"><div class="k"><span class="dot d-bad"></span>Security</div><div class="v">${f.security.length}</div><div class="s">possible fixes waiting</div></div>
+    <div class="kpi"><div class="k"><span class="dot d-info"></span>Ports</div><div class="v">${f.ck.ports?.pending??0}</div><div class="s">${f.ck.ports?.acknowledged??0} acknowledged</div></div>
+    <div class="kpi"><div class="k"><span class="dot ${probs.length?"d-warn":"d-ok"}"></span>Checks</div><div class="v">${probs.length?probs.length:"Pass"}</div><div class="s">${esc(probs[0]||"all gates green")}</div></div>
+  </div>
+  <div class="cols">
+    <div class="card panel">
+      <div class="ph"><h3>Needs you</h3><span class="sp"></span><a href="#inbox" class="faint">Open inbox</a></div>
+      ${group("d-bad","Security",f.security,"tether inbox --security")}
+      ${group("d-warn","Conflicts",f.conflicts,"tether sync --dry-run",pathRow)}
+      ${group("d-info","Ports to review",f.ports,"")}
+      ${group("d-mute","Done by hand",f.applied,"")}
+      ${probs.length?`<div class="group"><div class="gh"><span class="dot d-warn"></span>Checks<span class="c">${probs.length}</span><span class="mono copy" data-copy="tether check">tether check</span></div>${probs.map(p=>`<div class="row" style="cursor:default"><span class="t">${esc(p)}</span></div>`).join("")}</div>`:""}
+      ${!f.security.length&&!f.conflicts.length&&!f.ports.length&&!f.applied.length&&!probs.length?`<div class="empty">Nothing needs you.</div>`:""}
+    </div>
+    <div class="side">
+      <div class="card panel">
+        <div class="ph"><h3>Boundary</h3><span class="sp"></span><a href="#boundary" class="faint">Map</a></div>
+        <div class="budget">${showFiles.map(x=>`<div class="brow"><div class="top"><span class="mono" title="${esc(x.path)}">${esc(x.path)}</span><span class="dl">${x.changes}</span></div><div class="track"><i class="${grew.has(x.path)?"bad":""}" style="width:${Math.max(3,x.changes/maxC*100)}%"></i></div></div>`).join("")||'<div class="empty">No diverged files.</div>'}</div>
+        <div class="health">
+          <div><div class="k">Unmarked</div><div class="v">${f.mp?.unmarked??"–"}</div></div>
+          <div><div class="k">Drifted</div><div class="v">${f.ck.drift?.length??0}</div></div>
+          <div><div class="k">Strays</div><div class="v">${f.ck.strays?.length??0}</div></div>
+        </div>
+      </div>
+      <div class="card panel latest">
+        <div class="ph"><h3>Latest from upstream</h3></div>
+        ${latest.map(i=>`<div class="row" data-item="${esc(i.sha)}"><div class="l1"><span class="t">${esc(i.subject)}</span></div><div class="l1"><span class="mono faint">${esc(short(i.sha))}</span>${statePill(i.state)}<span class="m" style="margin-left:auto">${esc(ago(i.date))}</span></div></div>`).join("")||'<div class="empty">Nothing yet.</div>'}
+      </div>
+    </div>
+  </div>`;
+}
+
+function inbox(){
+  const all=items(),f=facts();
+  const c={pending:f.pend.length,security:f.security.length,ports:f.ports.length,applied:f.applied.length,merged:all.filter(i=>i.state==="merged").length,ignored:all.filter(i=>i.state==="ignored").length,all:all.length};
+  const chip=(k,l)=>`<a class="chip ${inboxFilter===k?"on":""}" href="#inbox/${k}">${l}<span class="c">${c[k]}</span></a>`;
+  return `<h1>Inbox</h1><p class="lede">${esc(D.inbox.summary)}</p>
+  <div class="toolbar">${chip("pending","Pending")}${chip("security","Security")}${chip("ports","Ports")}${chip("applied","Done by hand")}${chip("merged","Merged")}${chip("ignored","Ignored")}${chip("all","All")}
+  <input class="filter" id="q" placeholder="Filter by subject, sha or #PR" autocomplete="off"></div>
+  <div class="card panel"><table><thead><tr><th>Ref</th><th>Subject</th><th>Tags</th><th>State</th><th class="num">Date</th></tr></thead><tbody id="tbody"></tbody></table><div id="tempty"></div></div>`;
+}
+function renderInboxTable(){
+  const f=facts(),q=query.trim().toLowerCase();
+  let list={security:f.security,ports:f.ports,applied:f.applied}[inboxFilter]||items().filter(i=>inboxFilter==="all"||i.state===inboxFilter);
+  if(q)list=list.filter(i=>(i.subject+" "+i.sha+" #"+(i.pr||"")).toLowerCase().includes(q));
+  $("#tbody").innerHTML=list.slice(0,400).map(i=>`<tr data-item="${esc(i.sha)}"><td class="mono faint">${esc(i.pr?"#"+i.pr:short(i.sha))}</td><td class="t" title="${esc(i.subject)}">${esc(i.subject)}${i.note?` <span class="faint">· ${esc(i.note)}</span>`:""}</td><td>${tagsFor(i)}</td><td>${statePill(i.state)}</td><td class="num faint">${esc(ago(i.date))}</td></tr>`).join("");
+  $("#tempty").innerHTML=list.length?(list.length>400?`<div class="more">${list.length-400} more; narrow the filter</div>`:""):'<div class="empty">No commits here.</div>';
+}
+
+function sync(){
+  const f=facts(),st=f.st,pv=D.preview;
+  return `<h1>Sync</h1><p class="lede">${esc(pv?.summary||"")}</p>
+  <div class="card callout"><div class="w"><b>Phase: ${esc(st.phase||"unknown")}</b><div>${esc(D.status.summary)}</div></div>${D.status.next?`<code class="cmd copy" data-copy="${esc(D.status.next.command)}" title="${esc(D.status.next.why)}">${esc(D.status.next.command)}</code>`:""}</div>
+  ${f.pv?`<div class="grid2">
+    <div class="card panel list"><div class="ph"><span class="dot d-warn"></span><h3>Need you</h3><span class="sp"></span><span class="faint">${f.conflicts.length}</span></div>${f.conflicts.map(p=>`<div class="li"><span class="mono">${esc(p)}</span></div>`).join("")||'<div class="empty">No conflicts.</div>'}</div>
+    <div class="card panel list"><div class="ph"><span class="dot d-ok"></span><h3>Resolve themselves</h3><span class="sp"></span><span class="faint">${f.owned.length}</span></div>${f.owned.map(p=>`<div class="li"><span class="mono">${esc(p)}</span><span class="pill ok">owned</span></div>`).join("")||'<div class="empty">None.</div>'}</div>
+  </div>
+  <p class="faint" style="margin-top:16px">Base <span class="mono">${esc(short(f.pv.base))}</span> → target <span class="mono">${esc(short(f.pv.target))}</span>. A dry run against the fetched upstream branch; nothing in the repository changed. To bring it in, run <code class="cmd copy" data-copy="tether sync">tether sync</code> in a terminal.</p>`:""}`;
+}
+
+function boundary(){
+  const f=facts(),mp=f.mp;
+  if(!mp)return `<h1>Boundary</h1><div class="card err">${esc(D.map?.summary||"No map.")}</div>`;
+  const grew=new Map(f.budgetFails.map(s=>[(s.match(/: (.+?) \d+ -> /)||[])[1],s]));
+  const files=mp.files.slice().sort((a,b)=>(grew.has(b.path)-grew.has(a.path))||b.changes-a.changes);
+  return `<h1>Boundary</h1><p class="lede">${esc(D.map.summary)} Marker: <span class="mono">${esc(mp.marker)}</span>.</p>
+  ${f.budgetFails.length?`<div class="card callout"><span class="dot d-bad"></span><div class="w"><b>${plural(f.budgetFails.length,"budget")} grew</b><div>${f.budgetFails.map(esc).join(" · ")}</div></div><code class="cmd copy" data-copy="tether check --update --accept-growth">tether check --update --accept-growth</code></div>`:""}
+  <div class="card panel">
+    <div class="ph"><h3>Diverged files</h3><span class="sp"></span><span class="faint">changes · markers · unmarked</span></div>
+    ${files.map(x=>`<details class="file"><summary><span class="mono" title="${esc(x.path)}">${esc(x.path)}</span>${grew.has(x.path)?'<span class="pill bad">grew</span>':""}${x.reason?'<span class="pill">reason</span>':""}<span class="m faint" style="width:150px;text-align:right">${x.changes} · ${x.markers.length} · <span style="color:${x.unmarked.length?"var(--warn)":"inherit"}">${x.unmarked.length}</span></span></summary>
+      <div class="why">${x.upstream_path&&x.upstream_path!==x.path?`<div><span class="ln">from</span><span class="mono faint">${esc(x.upstream_path)}</span></div>`:""}${x.reason?`<div><span class="ln">why</span><span>${esc(x.reason)}</span></div>`:""}${x.markers.map(m=>`<div><span class="ln mono">${m.line}</span><span>${esc(m.reason)}</span></div>`).join("")}${x.unmarked.map(u=>`<div><span class="ln mono">${u.line}</span><span style="color:var(--warn)">unmarked change (+${u.added} −${u.removed})</span></div>`).join("")}</div></details>`).join("")}
+  </div>`;
+}
+
+function decisions(){
+  const f=facts(),ck=f.ck,all=items();
+  const ignored=all.filter(i=>i.state==="ignored"),noted=all.filter(i=>i.note&&i.state!=="ignored");
+  const stat=(k,v,s)=>`<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
+  return `<h1>Decisions</h1><p class="lede">What has been recorded about upstream commits, and what is still owed. Record decisions with <span class="mono">tether decide</span>.</p>
+  <div class="card kpis">
+    ${stat("Ports acknowledged",ck.ports?.acknowledged??0,(ck.ports?.pending??0)+" still pending")}
+    ${stat("Unverified ports",ck.ports?.unverified?.length??0,"recorded without evidence")}
+    ${stat("Reviews",ck.reviews?.required??0,(ck.reviews?.missing?.length??0)+" missing")}
+    ${stat("Adopted files",ck.adopted?.count??0,(ck.adopted?.released?.length??0)+" released upstream")}
+  </div>
+  <div class="grid2">
+    <div class="card panel"><div class="ph"><h3>Ignored</h3><span class="sp"></span><span class="faint">${ignored.length}</span></div>${ignored.map(irow).join("")||'<div class="empty">None.</div>'}</div>
+    <div class="card panel"><div class="ph"><h3>With notes</h3><span class="sp"></span><span class="faint">${noted.length}</span></div>${noted.map(i=>irow(i).replace('<span class="m">',`<span class="m" title="${esc(i.note)}">`)).join("")||'<div class="empty">None.</div>'}</div>
+  </div>
+  ${ck.reviews?.missing?.length?`<div class="card panel" style="margin-top:18px"><div class="ph"><span class="dot d-warn"></span><h3>Missing reviews</h3></div>${ck.reviews.missing.map(m=>`<div class="row" style="cursor:default"><span class="t">${esc(typeof m==="string"?m:JSON.stringify(m))}</span></div>`).join("")}</div>`:""}`;
+}
+
+// packet drawer
+document.addEventListener("click",e=>{const r=e.target.closest("[data-item]");if(r)openPacket(r.dataset.item)});
+function closeDrawer(){$("#drawer").classList.remove("on");$("#scrim").classList.remove("on")}
+$("#scrim").onclick=closeDrawer;$("#dclose").onclick=closeDrawer;
+async function openPacket(sha){
+  $("#dsha").textContent=sha.slice(0,12);
+  $("#dbody").innerHTML='<div class="loading">Loading packet…</div>';
+  $("#drawer").classList.add("on");$("#scrim").classList.add("on");
+  const p=await get("/api/packet?item="+encodeURIComponent(sha));
+  if(!p.ok){$("#dbody").innerHTML=`<div class="err">${esc(p.summary)}</div>`;return}
+  const d=p.data||{};
+  const diff=(d.diff||"").slice(0,60000).split("\n").map(l=>{const c=l.startsWith("diff --git")?"f":l.startsWith("@@")?"h":l.startsWith("+")&&!l.startsWith("+++")?"a":l.startsWith("-")&&!l.startsWith("---")?"d":"";return c?`<span class="${c}">${esc(l)}</span>`:esc(l)}).join("\n");
+  $("#dbody").innerHTML=`
+    <h2>${esc(d.subject)}</h2>
+    <div class="meta" style="margin-top:0">${statePill(d.state)}<span>${esc(ago(d.date))}</span>${d.pr_url&&/^https:\/\//.test(d.pr_url)?`<a href="${esc(d.pr_url)}" target="_blank" rel="noopener noreferrer">PR #${esc(d.pr)}</a>`:""}${d.applied_here?'<span class="pill">applied here</span>':""}</div>
+    ${(d.required||[]).length?`<h4>Still needed</h4><div class="req">${d.required.map(r=>`<div class="r"><div class="a">${esc(r.action)} · ${esc(r.why)}</div><code class="cmd copy" data-copy="${esc(r.command)}">${esc(r.command)}</code></div>`).join("")}</div>`:(p.next?`<h4>Next</h4><code class="cmd copy" data-copy="${esc(p.next.command)}">${esc(p.next.command)}</code>`:"")}
+    <h4>Files</h4>
+    <div class="card"><table class="ftable"><tbody>${(d.files||[]).map(x=>`<tr style="cursor:default"><td class="mono faint">${esc(x.change)}</td><td class="t mono" title="${esc(x.fork_path||x.upstream_path)}">${esc(x.fork_path||x.upstream_path)}${x.fork_path&&x.fork_path!==x.upstream_path?` <span class="faint">← ${esc(x.upstream_path)}</span>`:""}</td><td>${x.owned?'<span class="pill ok">owned</span>':""}${x.relocation?'<span class="pill info">relocated</span>':""}${x.in_fork===false?'<span class="pill">not in fork</span>':""}</td></tr>`).join("")}</tbody></table></div>
+    <h4>Message</h4><pre>${esc(d.message)}</pre>
+    ${d.diff?`<h4>Diff</h4><pre>${diff}</pre>`:""}`;
+}
+
+// keys
+function focusSearch(){if(!location.hash.startsWith("#inbox"))location.hash="#inbox/all";setTimeout(()=>$("#q")?.focus(),0)}
+$("#searchBtn").onclick=focusSearch;
+document.addEventListener("keydown",e=>{
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){e.preventDefault();focusSearch()}
+  else if(e.key==="Escape")closeDrawer();
+});
+$("#refresh").onclick=load;
+load();
+</script>
+</body>
+</html>

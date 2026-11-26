@@ -166,6 +166,15 @@ pub enum Command {
     },
     /// Check that git and this repository are usable, in plain words.
     Doctor,
+    /// Open a local, read-only dashboard of this fork in the browser.
+    Ui {
+        /// Port to listen on (default: any free port).
+        #[arg(long, default_value_t = 0)]
+        port: u16,
+        /// Print the address without opening a browser.
+        #[arg(long)]
+        no_open: bool,
+    },
 }
 
 impl Command {
@@ -183,6 +192,7 @@ impl Command {
             Command::Check { .. } => "check",
             Command::Closeout { .. } => "closeout",
             Command::Doctor => "doctor",
+            Command::Ui { .. } => "ui",
         }
     }
 }

@@ -24,6 +24,9 @@ pub fn run(command: &Command, dir: &Path) -> Report {
     let name = command.name();
     let result = match command {
         Command::Doctor => doctor::run(dir),
+        Command::Ui { port, no_open } => crate::ui::serve(dir, *port, !*no_open)
+            .map(|()| Report::success(name, "tether ui stopped.", serde_json::Value::Null))
+            .map_err(Into::into),
         Command::Status => status::run(dir),
         Command::Init { sync_point, remote } => init::run(dir, remote, sync_point.as_deref()),
         Command::Inbox { all, security } => inbox::run(dir, *all, *security),
