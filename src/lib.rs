@@ -19,6 +19,7 @@ pub mod map;
 pub mod mcp;
 pub mod paths;
 pub mod ports;
+pub mod prove;
 pub mod report;
 pub mod review;
 pub mod session;

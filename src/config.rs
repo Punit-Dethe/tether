@@ -678,7 +678,10 @@ impl Config {
     pub fn to_fork_path(&self, upstream_path: &str) -> String {
         for moved in &self.moved {
             if let Some(rest) = upstream_path.strip_prefix(&moved.upstream) {
-                if !upstream_path.starts_with(&moved.fork) {
+                // `stay` files kept upstream's path when the folder moved.
+                if !upstream_path.starts_with(&moved.fork)
+                    && !moved.stay.iter().any(|s| s == upstream_path)
+                {
                     return format!("{}{rest}", moved.fork);
                 }
             }

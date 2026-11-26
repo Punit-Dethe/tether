@@ -210,6 +210,14 @@ pub enum Command {
         #[arg(long)]
         no_fetch: bool,
     },
+    /// Prove, from the code, that a sync kept upstream's changes: every hunk
+    /// of every upstream commit is checked against the fork (default: the
+    /// last sync, or the staged result of one in progress).
+    Prove {
+        /// Upstream commit to prove from (default: the previous sync point).
+        #[arg(long, value_name = "REV")]
+        from: Option<String>,
+    },
     /// Check that git and this repository are usable, in plain words.
     Doctor,
     /// Open a local, read-only dashboard of this fork in the browser.
@@ -248,6 +256,7 @@ impl Command {
             Command::Check { .. } => "check",
             Command::Closeout { .. } => "closeout",
             Command::Deps { .. } => "deps",
+            Command::Prove { .. } => "prove",
             Command::Doctor => "doctor",
             Command::Ui { .. } => "ui",
             Command::Mcp { .. } => "mcp",

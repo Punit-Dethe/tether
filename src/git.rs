@@ -32,11 +32,47 @@ impl Output {
 #[derive(Debug, Clone)]
 pub struct Git {
     dir: PathBuf,
+    /// A private index file (`GIT_INDEX_FILE`), so checks against a tree
+    /// never touch the real index.
+    index: Option<PathBuf>,
 }
 
 impl Git {
     pub fn new(dir: impl Into<PathBuf>) -> Self {
-        Git { dir: dir.into() }
+        Git {
+            dir: dir.into(),
+            index: None,
+        }
+    }
+
+    /// The same repository, using `index` instead of the real index.
+    pub fn with_index(&self, index: impl Into<PathBuf>) -> Self {
+        Git {
+            dir: self.dir.clone(),
+            index: Some(index.into()),
+        }
+    }
+
+    /// Run git with `input` on stdin; whether it exited 0.
+    pub fn succeeds_with_input(&self, args: &[&str], input: &[u8]) -> Result<bool> {
+        use std::io::Write;
+        use std::process::Stdio;
+        let mut child = self
+            .command(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|error| match error.kind() {
+                std::io::ErrorKind::NotFound => Error::GitMissing,
+                _ => Error::Io(error),
+            })?;
+        let mut stdin = child.stdin.take().expect("piped stdin");
+        let request = input.to_vec();
+        let writer = std::thread::spawn(move || stdin.write_all(&request));
+        let status = child.wait()?;
+        let _ = writer.join();
+        Ok(status.success())
     }
 
     pub fn dir(&self) -> &Path {
@@ -55,6 +91,9 @@ impl Git {
             // a credential prompt: an agent cannot answer it.
             .env("LC_ALL", "C")
             .env("GIT_TERMINAL_PROMPT", "0");
+        if let Some(index) = &self.index {
+            command.env("GIT_INDEX_FILE", index);
+        }
         command
     }
 

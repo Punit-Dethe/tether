@@ -36,6 +36,14 @@ extra upstreams. Plain `tether status` covers all of them (see
 work is on an extra one. Keep that flag on every command for that upstream;
 each one has its own decisions and sync point.
 
+**Prove your work.** After a sync (or before `sync --continue`), run
+`tether prove --json`. It checks every upstream commit against the code.
+`dropped` and `contradicted` mean a change is not there: apply it from its
+packet, or record why it was left out with `decide <sha> ignored --note`.
+`unproven` means the fork's code differs: read both sides and record where
+the fork carries the change with `decide <sha> --note`. Never write a note
+you did not check.
+
 **Forked libraries.** `tether deps --json` lists libraries taken from git.
 Only `whose: "yours"` ones are this repository's job; `upstream` ones are
 maintained by the project this fork came from. It only reports. Never bump a

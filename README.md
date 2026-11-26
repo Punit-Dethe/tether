@@ -59,6 +59,24 @@ repo, so the next sync and your CI see them too.
 checks your fork as it was and upstream as it shipped, so you know whose test
 broke. Only failures that are new in the result block the sync.
 
+**Proves a sync kept upstream's work.** Agents do the work; `tether prove`
+checks it from the code. Every hunk of every upstream commit since the last
+sync (or in a sync still in progress) is tested against your tree with
+`git apply --check`, so nothing is written. Each commit comes out one of:
+
+- **Proven:** its changes are in your code, a later upstream commit replaced
+  them, or they fall in an area you own.
+- **Explained:** not in your code, and a recorded decision says why.
+- **Dropped:** not in your code and nothing says why. That's a lost change.
+- **Contradicted:** recorded as merged, but the code says otherwise.
+- **Unproven:** your code is different where upstream changed it. tether
+  won't guess whether that's the change adapted or the change lost, so it
+  asks for a note.
+
+It never calls code proven just because it looks similar. On Grain's
+72-commit sync it found a dependency bump that never landed, although the
+sync point said it had.
+
 **Maps where you differ.** `tether map` generates a divergence map from short
 `// tether: <why>` comments in your code. You never maintain it by hand, and
 `tether check` flags changes with no explanation.
@@ -260,7 +278,8 @@ Python tooling it replaced: 299 tracked commits, a 72-commit sync with 13
 conflicts, 42 size budgets, the port audit and the review gate. The roadmap is
 in [docs/PLAN.md](docs/PLAN.md).
 
-New and less proven: `tether deps` and several upstreams in one repository.
+New and less proven: `tether prove`, `tether deps` and several upstreams in
+one repository.
 In the dashboard, Libraries shows `tether deps`, and a repository with more
 than one upstream gets a switcher in the sidebar.
 

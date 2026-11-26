@@ -117,6 +117,7 @@ fn an_agent_reads_the_fork_through_tools() {
         "map",
         "check",
         "doctor",
+        "prove",
         "folder",
     ] {
         assert!(tools.contains(&tool.to_owned()), "{tool} in {tools:?}");

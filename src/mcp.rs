@@ -180,6 +180,17 @@ const TOOLS: &[Tool] = &[
         writes: false,
     },
     Tool {
+        name: "prove",
+        description: "Prove from the code that a sync kept upstream's changes: every hunk of every upstream commit since the previous sync point (or in the staged sync in progress) is checked against the fork with `git apply --check`. Each commit is proven (landed, superseded upstream, or covered by an owned area), explained by a recorded decision, dropped (missing, no decision), contradicted (recorded merged, missing) or unproven (the fork's code differs there). Read-only.",
+        properties: || {
+            json!({
+                "from": { "type": "string", "description": "Upstream commit to prove from (default: the previous sync point)." }
+            })
+        },
+        required: &[],
+        writes: false,
+    },
+    Tool {
         name: "folder",
         description: "List folders, or group upstream commits into folders (a reading aid in .tether/folders.toml; it never changes a commit's state). With no arguments it lists them.",
         properties: || {
@@ -416,6 +427,9 @@ fn command(name: &str, args: &Args) -> Result<Command, String> {
             since: args.rev("since")?,
         },
         "doctor" => Command::Doctor,
+        "prove" => Command::Prove {
+            from: args.rev("from")?,
+        },
         "deps" => Command::Deps {
             name: args.text("name")?,
             no_fetch: args.flag("no_fetch")?,
