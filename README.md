@@ -1,47 +1,74 @@
 # tether
 
-Keep a long-lived fork in step with the project it came from — even one that
-was downloaded rather than forked, and whose history you don't want mixed
-into yours.
+**Keep your fork in step with the project it came from, without letting
+upstream's history take over yours.**
 
-tether is a small command-line tool built for AI coding agents first and
-people second. Every command can answer in JSON with the same shape, and
-always says what to do next.
+You built a product on top of an open-source project. Upstream keeps shipping
+fixes, translations, security patches and features, and your fork keeps
+drifting. Every catch-up is a guessing game: what's new, what's safe, what
+will clash with your own changes, and what did you decide last time?
 
-> **Status: early — milestones M1 to M5 done.** Working now: `doctor`,
-> `init`, `status`, `inbox`, `packet`, `decide`, `sync`, `verify`, `map`,
-> `closeout` and `check`. They give the same results as the Python tooling they replace on a
-> real product fork's history (Grain on Handy: 299 tracked commits, a
-> 72-commit sync with 13 conflicts, 42 budgets, the port audit and the review
-> gate). An AI agent can run a whole sync by following `tether status` alone
-> (see [AGENT.md](AGENT.md)). See [docs/PLAN.md](docs/PLAN.md).
+tether answers those questions. It's a small, local command-line tool built
+for AI coding agents first and people second. Every command answers in the
+same JSON shape and always says what to do next, so an agent can run a whole
+sync on its own and stop when a person needs to decide something.
 
-## What it will do
+![The tether dashboard: 19 upstream commits waiting, two security fixes, a sync preview and the files that will need you](docs/screenshots/overview.png)
 
-- **Clean history.** Each sync lands as one commit on your side, with an
-  `Upstream-Synced: <sha>` line recording how far you have taken upstream.
-  None of upstream's commits or authors appear in your history.
-- **An inbox, not a wall of commits.** Upstream changes since your last sync,
-  grouped by kind (security fixes first) and by what you decided about them.
-- **Work packets for agents.** For one upstream change: the diff, why it was
-  made, where it lands in your code (even after you moved files), and how to
-  check the port worked.
-- **Decisions with evidence.** Take, skip or adapt each change, with the
-  reason kept next to the code.
-- **Verify three ways.** Build and test your fork as it was, upstream as it
-  shipped, and the result — so you know whose test broke.
-- **A divergence map generated from the code**, not maintained by hand.
-- **Plan the sync.** `tether plan` finds the furthest point you can sync to
-  with no conflict, previews each upstream release in range, and sorts the
-  waiting commits from easiest to hardest by what they touch in your fork.
-- **Folders.** `tether folder <name> <commits>…` groups upstream commits your
-  own way, for reading; it never changes what a sync does.
-- **A local dashboard.** `tether ui` opens the same reports in your browser:
-  what is waiting, the sync plan, releases, and where your fork differs, with
-  drag-and-drop folders. It listens on this machine only and changes nothing
-  else.
-- **An MCP server.** `tether mcp` offers the same commands as tools to agents
-  that speak the Model Context Protocol (see below).
+<sub>Screenshots show a made-up fork, "Lumen Studio", built on an imaginary
+upstream, "Lumen". Build it yourself with `scripts/demo-fork.sh`.</sub>
+
+## What it does
+
+**Shows you what upstream changed, as an inbox.** Every upstream commit since
+your last sync, with its state (pending, merged, ignored, ported by hand), the
+release that first shipped it, and any security references (GHSA and CVE ids,
+or words like "XSS"). Security fixes come first.
+
+![The inbox: each upstream commit with its release, folder, how easy it is to take, and its state](docs/screenshots/inbox.png)
+
+**Plans the sync before you start.** `tether plan` does dry runs along
+upstream's history. It finds the furthest point you can sync to with no
+conflict at all, previews each upstream release in range, and sorts the
+waiting commits from easiest to hardest by what they touch in your fork:
+
+- **Clean:** touches nothing you changed.
+- **Owned:** touches only areas your fork owns, which resolve themselves.
+- **Overlap:** touches files you changed, but merges cleanly.
+- **Conflict:** needs a person.
+
+Take the easy part now and the hard part later.
+
+![The sync plan: a conflict-free step, each release in range, and the commits sorted easiest first](docs/screenshots/sync.png)
+
+**Lands each sync as one clean commit.** Upstream comes in as a single
+squashed commit on your side, with an `Upstream-Synced: <sha>` line recording
+how far you have taken it. None of upstream's commits or authors appear in
+your history. It works even if you downloaded the project instead of forking
+it, with no shared history at all.
+
+**Gives agents a work packet per change.** For one upstream commit, `tether
+packet` prints the diff, why it was made, where it lands in your code (even
+after you moved files around), and how to record what you decided.
+
+**Keeps decisions next to the code.** Take, skip or adapt each change, with
+the reason and the evidence saved in `.tether/`. They're checked into your
+repo, so the next sync and your CI see them too.
+
+**Verifies three ways.** When the result fails to build or test, tether also
+checks your fork as it was and upstream as it shipped, so you know whose test
+broke. Only failures that are new in the result block the sync.
+
+**Maps where you differ.** `tether map` generates a divergence map from short
+`// tether: <why>` comments in your code. You never maintain it by hand, and
+`tether check` flags changes with no explanation.
+
+**Lets you sort upstream your own way.** File commits into folders like
+"Translations" or "CI" so the inbox reads the way you think. Folders are only
+a reading aid and never change what a sync does.
+
+**Guards it all in CI.** `tether check` is one gate for size budgets, stray
+changes, owned areas, drift, ports and reviews.
 
 ## Try it
 
@@ -50,48 +77,111 @@ cargo install --git https://github.com/Punit-Dethe/tether
 cd your-fork
 git remote add upstream <url-of-the-original-project>   # if not already there
 tether doctor
-tether status --json
+tether init --sync-point <last-upstream-commit-you-have>
+tether status
 ```
 
-## The JSON contract
+`tether status` always ends with the single next thing to do.
+
+To look around first, build the demo fork from the screenshots and open the
+dashboard:
+
+```sh
+scripts/demo-fork.sh /tmp/tether-demo
+cd /tmp/tether-demo/lumen-studio
+tether ui
+```
+
+## Three ways to use it
+
+**1. From the command line** (people, or agents with a shell)
+
+| Command | What it does |
+| --- | --- |
+| `status` | Where things stand, and the one thing to do next |
+| `inbox` | Upstream commits and their state (`--all`, `--security`) |
+| `plan` | The conflict-free step, each release, and commits easiest first |
+| `packet <item>` | Everything needed to act on one upstream commit |
+| `sync` | Bring upstream in (`--dry-run`, `--target`, `--continue`, `--abort`) |
+| `decide <item> …` | Record merged, ignored, ported or adapted, with evidence |
+| `verify` | Build and test the result against the fork and upstream |
+| `map` | The divergence map from `tether:` comments |
+| `folder` | Group commits into folders of your own |
+| `check` | The CI gate |
+| `closeout <rev>` | Move the sync point over fully decided commits |
+| `doctor` | Check git and the repository, in plain words |
+| `ui` | Open the local dashboard |
+| `mcp` | Serve the commands as MCP tools |
+
+Add `--json` to any command for the machine-readable report. Items are a
+commit sha prefix or a PR number like `#412`.
+
+**2. In the browser.** `tether ui` opens the dashboard in the screenshots
+above. It listens only on your own machine, refuses requests from other
+sites, and changes nothing except your folders.
+
+**3. As an MCP server** (agents without a shell). Many agent apps can't run
+commands but do speak the Model Context Protocol. Add tether once, and the app
+starts `tether mcp` in the background when a session opens and stops it when
+the session ends. There's nothing to keep running yourself. With Claude Code:
+
+```sh
+claude mcp add tether -- tether mcp                  # read-only
+claude mcp add tether -- tether mcp --allow-writes   # can also sync and decide
+```
+
+Other apps take the same command in their MCP settings:
+`"command": "tether", "args": ["mcp"]`. Run it in the fork, or add
+`-C <path-to-fork>` before `mcp`.
+
+| Always available (read-only) | Only with `--allow-writes` |
+| --- | --- |
+| `status`, `inbox`, `plan`, `packet`, `sync_preview`, `map`, `check`, `doctor`, `folder` | `decide`, `sync`, `verify`, `closeout` |
+
+Only a person can turn writes on, because the flag lives in the app's
+settings. Every tool call counts as an agent's, so your fork's rules about what
+needs a person (below) still apply.
+
+## Built for agents
+
+Every command returns the same envelope, so an agent can always read `ok`,
+`error.code` and `next` without knowing which command it ran:
 
 ```json
 {
   "tether": "0.1.0",
   "command": "status",
   "ok": true,
-  "summary": "tether is not set up in this repository yet.",
-  "data": { "configured": false },
-  "next": { "command": "tether init", "why": "..." },
+  "summary": "2 pending security fix(es). 19 upstream commit(s) past the sync point.",
+  "data": { "phase": "behind", "behind": 19 },
+  "next": { "command": "tether sync", "why": "...", "kind": "run" },
   "error": null
 }
 ```
 
-Exit codes: `0` done, `1` failed (see `error.code`), `2` worked but something
-needs action (see `next`). Agents should branch on `error.code`, never on
-message text.
+- **`next.kind`** says how to treat `next.command`. `run` means run it as
+  written, `edit` means fix files first, `decide` means fill in a decision, and
+  `ask_human` means stop and ask.
+- **Exit codes:** `0` done, `1` failed (see `error.code`), `2` worked but
+  something needs action (see `next`). Branch on `error.code`, never on
+  message text.
+- **What needs a person** is your call: list actions such as `skip-verify`,
+  `sync-unreleased` or `ignored` under `[agent] needs_human` in
+  `.tether/config.toml`. An agent then gets `needs_human` instead of the
+  action happening.
 
-## For agents without a shell: MCP
+[AGENT.md](AGENT.md) is the guide to hand your agent: it can run a whole sync
+by following `tether status` alone.
 
-Agents that can run commands just run `tether … --json`. For the rest, add
-tether as an MCP server; the agent's app starts `tether mcp` in the fork when
-a session opens and stops it when the session ends. With Claude Code:
+## Status
 
-```sh
-claude mcp add tether -- tether mcp            # read-only
-claude mcp add tether -- tether mcp --allow-writes
-```
-
-Other apps take the same command in their MCP settings (`"command": "tether",
-"args": ["mcp"]`, run in the fork, or add `-C <fork>`).
-
-Each tool answers with the command's JSON report above. Read-only tools are
-always on: `status`, `inbox`, `plan`, `packet`, `sync_preview`, `map`,
-`check`, `doctor`, and `folder` (folders are only a reading aid). `decide`,
-`sync`, `verify` and `closeout` appear only with `--allow-writes`, which only a
-person can pass. Whoever calls the tools counts as an agent, so the fork's
-`[agent] needs_human` policy applies to every call.
+Early, but used for real. tether runs the upstream sync for
+[Grain](https://github.com/Punit-Dethe/Grain), a product fork of
+[Handy](https://github.com/cjpais/Handy). On that history it matches the
+Python tooling it replaced: 299 tracked commits, a 72-commit sync with 13
+conflicts, 42 size budgets, the port audit and the review gate. The roadmap is
+in [docs/PLAN.md](docs/PLAN.md).
 
 ## Licence
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
